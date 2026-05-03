@@ -18,13 +18,31 @@ import {
 // Helper genérico de mapeamento ----------------------------------
 type Mapping = Record<string, string>; // tsKey -> dbKey
 
+// Campos que são FK e devem virar NULL quando recebem string vazia
+// (Postgres rejeita FK com '' — precisa ser NULL ou ID válido)
+const NULLABLE_FK_FIELDS = new Set([
+  'category_id',
+  'current_pen_id',
+  'current_diet_id',
+  'origin_pen_id',
+  'destination_pen_id',
+  'pen_id',
+  'diet_id',
+  'lot_id', // safety; geralmente obrigatório, mas evita string vazia
+]);
+
 function objToDb<T extends object>(obj: Partial<T>, mapping: Mapping): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const tsKey of Object.keys(obj) as (keyof T)[]) {
     const dbKey = mapping[tsKey as string];
     if (!dbKey) continue;
-    const val = (obj as Record<string, unknown>)[tsKey as string];
-    if (val !== undefined) out[dbKey] = val;
+    let val = (obj as Record<string, unknown>)[tsKey as string];
+    if (val === undefined) continue;
+    // Empty string em campos FK vira NULL pra evitar violação de chave
+    if (val === '' && NULLABLE_FK_FIELDS.has(dbKey)) {
+      val = null;
+    }
+    out[dbKey] = val;
   }
   return out;
 }

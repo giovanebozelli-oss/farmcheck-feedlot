@@ -98,40 +98,37 @@ export const getAdjustmentForScore = (score: BunkScore, rules: BunkScoreAdjustme
 };
 
 // F-09: Calculate Active Head Count for a Lot based on Movements
+// Lógica robusta:
+//  - Se houver QUALQUER Entry registrada: o total = soma das Entries - soma de mortes/saídas/transferências/refugos
+//  - Se NÃO houver Entry: usa lot.headCount como base + deltas (Transfer/Death/Exit/Refusal subtraem)
 export const calculateActiveHeadCount = (
   lotId: string, 
   initialHeads: number, 
   movements: AnimalMovement[],
   asOfDate?: string
 ): number => {
-  let total = 0;
+  let entryTotal = 0;
+  let deltaTotal = 0;
   let entryFound = false;
 
-  // Single pass through movements
   for (let i = 0; i < movements.length; i++) {
     const mov = movements[i];
     if (mov.lotId !== lotId) continue;
     if (asOfDate && mov.date > asOfDate) continue;
 
     if (mov.type === MovementType.Entry) {
-      if (!entryFound) {
-        total = mov.quantity;
-        entryFound = true;
-      } else {
-        total += mov.quantity;
-      }
+      entryTotal += mov.quantity;
+      entryFound = true;
     } else {
-      total -= mov.quantity;
+      // Death, Exit, Transfer, Refusal — todos subtraem
+      deltaTotal -= mov.quantity;
     }
   }
 
-  // If no entry movement was found, we treat initialHeads as the base count 
-  // and movements as relative deltas (deaths/exits) applied to it.
-  if (!entryFound) {
-    return Math.max(0, initialHeads + total);
+  if (entryFound) {
+    return Math.max(0, entryTotal + deltaTotal);
   }
-
-  return Math.max(0, total);
+  return Math.max(0, initialHeads + deltaTotal);
 };
 
 // Optimization for bulk processing (Reports, FeedSheet initialization)
@@ -140,41 +137,41 @@ export const calculateAllHeadCounts = (
   movements: AnimalMovement[],
   asOfDate?: string
 ): Record<string, number> => {
-  const lotStates: Record<string, { total: number; foundEntry: boolean }> = {};
+  // Estado por lote: soma de Entries e soma de deltas (sempre <= 0)
+  const lotStates: Record<string, { entryTotal: number; deltaTotal: number; foundEntry: boolean; baseHeads: number }> = {};
 
-  // Initialize with lot base heads
+  // Inicializa com base do lote
   for (let i = 0; i < lots.length; i++) {
     const lot = lots[i];
-    lotStates[lot.id] = { total: lot.headCount, foundEntry: false };
+    lotStates[lot.id] = { entryTotal: 0, deltaTotal: 0, foundEntry: false, baseHeads: lot.headCount };
   }
 
-  // Process movements once
+  // Processa movements
   for (let i = 0; i < movements.length; i++) {
     const mov = movements[i];
     if (asOfDate && mov.date > asOfDate) continue;
-    
-    if (!lotStates[mov.lotId]) {
-      // In case we have movements for a lot not passed in the 'lots' array
-      lotStates[mov.lotId] = { total: 0, foundEntry: false };
-    }
 
+    if (!lotStates[mov.lotId]) {
+      lotStates[mov.lotId] = { entryTotal: 0, deltaTotal: 0, foundEntry: false, baseHeads: 0 };
+    }
     const state = lotStates[mov.lotId];
+
     if (mov.type === MovementType.Entry) {
-      if (!state.foundEntry) {
-        state.total = mov.quantity;
-        state.foundEntry = true;
-      } else {
-        state.total += mov.quantity;
-      }
+      state.entryTotal += mov.quantity;
+      state.foundEntry = true;
     } else {
-      state.total -= mov.quantity;
+      // Death, Exit, Transfer, Refusal — subtraem
+      state.deltaTotal -= mov.quantity;
     }
   }
 
   const results: Record<string, number> = {};
   for (const id in lotStates) {
-    const count = lotStates[id].total;
-    results[id] = isNaN(count) ? 0 : Math.max(0, count);
+    const s = lotStates[id];
+    const total = s.foundEntry
+      ? s.entryTotal + s.deltaTotal
+      : s.baseHeads + s.deltaTotal;
+    results[id] = isNaN(total) ? 0 : Math.max(0, total);
   }
   return results;
 };

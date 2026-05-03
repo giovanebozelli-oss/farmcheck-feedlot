@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { useAppStore } from '../context';
 import { calculateDaysOnFeed, calculateProjectedWeight, formatCurrency, calculateAllHeadCounts } from '../utils';
-import { FileDown, FileText, Lock, Unlock, X, TrendingUp, ChevronRight, Trash2 } from 'lucide-react';
+import { FileDown, FileText, Lock, Unlock, X, TrendingUp, ChevronRight, Trash2, Wheat } from 'lucide-react';
 import { generateZootecnicoPDF } from '../utils/pdfGenerator';
 import { MovementType } from '../types';
 import { generateZootecnicoExcel } from '../utils/excelGenerator';
@@ -72,7 +72,7 @@ const Reports: React.FC = () => {
         : 0;
 
       const avgCMS_MN_5d = last5DaysRecords.length > 0 
-        ? last5DaysRecords.reduce((acc, curr) => acc + (curr.actualTotalMN / heads), 0) / last5DaysRecords.length
+        ? last5DaysRecords.reduce((acc, curr) => acc + (heads > 0 ? curr.actualTotalMN / heads : 0), 0) / last5DaysRecords.length
         : 0;
 
       const avgPV_5d = last5DaysRecords.length > 0
@@ -85,7 +85,7 @@ const Reports: React.FC = () => {
         : 0;
 
       const avgCMS_MN_Period = periodRecords.length > 0
-        ? periodRecords.reduce((acc, curr) => acc + (curr.actualTotalMN / heads), 0) / periodRecords.length
+        ? periodRecords.reduce((acc, curr) => acc + (heads > 0 ? curr.actualTotalMN / heads : 0), 0) / periodRecords.length
         : 0;
 
       const avgCost_Period = periodRecords.length > 0
@@ -293,6 +293,7 @@ const Reports: React.FC = () => {
                     <tr>
                       <th rowSpan={2} className="px-4 py-4 sticky left-0 bg-slate-900 z-10 border-r border-slate-700">Lote / Baia</th>
                       <th rowSpan={2} className="px-4 py-4 text-center">Cat.</th>
+                      <th rowSpan={2} className="px-4 py-4 text-center">Dieta</th>
                       <th rowSpan={2} className="px-4 py-4 text-center">Cab.</th>
                       <th rowSpan={2} className="px-4 py-4 text-center">DOF</th>
                       <th rowSpan={2} className="px-4 py-4 text-center">Entrada</th>
@@ -322,7 +323,7 @@ const Reports: React.FC = () => {
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {zootecnicoData.length === 0 ? (
-                      <tr><td colSpan={18} className="p-12 text-center text-slate-400 italic">Nenhum dado ativo para esta data...</td></tr>
+                      <tr><td colSpan={19} className="p-12 text-center text-slate-400 italic">Nenhum dado ativo para esta data...</td></tr>
                     ) : zootecnicoData.map((row) => (
                       <tr 
                         key={row.lotId} 
@@ -350,6 +351,7 @@ const Reports: React.FC = () => {
                           </div>
                         </td>
                         <td className="px-4 py-4 text-center font-bold text-slate-500 uppercase tracking-tighter text-[10px]">{row.category}</td>
+                        <td className="px-3 py-4 text-center text-[10px] font-bold text-emerald-700 truncate max-w-[120px]" title={row.diet || '-'}>{row.diet || '-'}</td>
                         <td className="px-4 py-4 text-center font-bold">{isNaN(row.heads) ? 0 : row.heads}</td>
                         <td className="px-4 py-4 text-center">{isNaN(row.daysOnFeed) ? 0 : row.daysOnFeed}</td>
                         <td className="px-4 py-4 text-center text-slate-500">{row.entryWeight.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} kg</td>
@@ -408,6 +410,15 @@ const Reports: React.FC = () => {
                       <div className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-1">Análise de Consumo</div>
                       <h3 className="text-2xl font-black text-slate-900 italic tracking-tighter uppercase">{selectedLotData?.lotName}</h3>
                       <div className="text-xs text-slate-400">Baia atual: {selectedLotData?.penName}</div>
+                      {selectedLotData?.diet && (
+                        <div className="mt-3 inline-flex items-center gap-2 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-lg">
+                          <Wheat size={14} className="text-emerald-700" />
+                          <div>
+                            <div className="text-[9px] font-black text-emerald-700 uppercase tracking-wider">Dieta Atual</div>
+                            <div className="text-xs font-bold text-emerald-900">{selectedLotData.diet}</div>
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     <div className="h-[250px] w-full mb-6">

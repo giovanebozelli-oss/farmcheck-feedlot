@@ -47,18 +47,18 @@ const AnimalMovementPage: React.FC = () => {
 
   const [historyLotId, setHistoryLotId] = useState<string>('');
 
-  const handleRegisterLot = (e: React.FormEvent) => {
+  const handleRegisterLot = async (e: React.FormEvent) => {
     e.preventDefault();
     if(!newLot.name || !newLot.currentPenId || !newLot.headCount) return;
 
-    const lotId = `L${Date.now().toString().slice(-4)}`;
+    const lotId = `L${Date.now().toString().slice(-6)}${Math.floor(Math.random() * 100).toString().padStart(2, '0')}`;
     const lot: Lot = {
       id: lotId,
       name: newLot.name,
       entryDate: newLot.entryDate || '',
       initialWeight: Number(newLot.initialWeight) || 0,
       breed: newLot.breed || '',
-      categoryId: newLot.categoryId || categories[0]?.id || 'c1',
+      categoryId: newLot.categoryId || categories[0]?.id || '',
       gender: newLot.gender as 'MACHO' | 'FEMEA',
       gmdCurveId: newLot.gmdCurveId || 'curva_padrao',
       currentPenId: newLot.currentPenId,
@@ -68,17 +68,14 @@ const AnimalMovementPage: React.FC = () => {
       status: 'ACTIVE'
     };
 
-    addLot(lot);
-    
-    // Auto-create entry movement
-    addMovement({
-      id: `m-entry-${Date.now()}`,
-      date: lot.entryDate,
-      lotId: lotId,
-      type: MovementType.Entry,
-      quantity: lot.headCount,
-      notes: 'Lote cadastrado no sistema (Entrada inicial)'
-    });
+    try {
+      await addLot(lot);
+      // Entry inicial é criado dentro de addLot (fonte única da verdade)
+    } catch (err) {
+      console.error('[handleRegisterLot]', err);
+      alert('Erro ao cadastrar lote. Tente novamente.');
+      return;
+    }
 
     setNewLot({
       name: '',

@@ -507,15 +507,19 @@ const LotDatabase: React.FC = () => {
                    
                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div>
-                        <label className="block text-xs font-bold text-slate-400 mb-2 uppercase">GMD Planejado (kg/dia)</label>
-                        <input 
-                          type="number" 
-                          step="0.05"
-                          className={`w-full p-3 border rounded-xl bg-white shadow-sm focus:ring-2 focus:ring-emerald-500 outline-none font-mono ${isClosed ? 'opacity-60 cursor-not-allowed bg-slate-50' : ''}`}
-                          value={(selectedLot as any).projectedGMD || 1.5}
-                          onChange={e => updateLot(selectedLot.id, { projectedGMD: Number(e.target.value) } as any)}
+                        <label className="block text-xs font-bold text-slate-400 mb-2 uppercase">Curva GMD</label>
+                        <select 
+                          className={`w-full p-3 border rounded-xl bg-white shadow-sm focus:ring-2 focus:ring-emerald-500 outline-none ${isClosed ? 'opacity-60 cursor-not-allowed bg-slate-50' : ''}`}
+                          value={selectedLot.gmdCurveId || ''}
+                          onChange={e => updateLot(selectedLot.id, { gmdCurveId: e.target.value })}
                           disabled={isClosed}
-                        />
+                        >
+                          {config.gmdCurves.map(curve => (
+                            <option key={curve.id} value={curve.id}>
+                              {curve.name} ({curve.gmd.toFixed(2)} kg/dia)
+                            </option>
+                          ))}
+                        </select>
                       </div>
                       <div>
                         <label className="block text-xs font-bold text-slate-400 mb-2 uppercase">Meta de Peso Final (kg)</label>

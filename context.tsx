@@ -341,13 +341,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   );
 
   // ----- Lots -----
+  // Sempre que um lote é inserido, registra o movement Entry correspondente.
+  // Isso garante que `calculateAllHeadCounts` use as movements como fonte da verdade.
   const addLot = async (lot: Lot) => {
     const existingLotInPen = lots.find(
-      (l) => l.currentPenId === lot.currentPenId && l.status === 'ACTIVE'
+      (l) => l.currentPenId === lot.currentPenId && l.status === 'ACTIVE' && getActiveHeadCount(l.id) > 0
     );
 
     if (existingLotInPen) {
-      // Mescla: cria novo lote combinado a partir dos dois
+      // Mescla: cria novo lote ponderado a partir dos dois
       const currentCount = getActiveHeadCount(existingLotInPen.id);
       const newTotalCount = currentCount + lot.headCount;
 
@@ -370,7 +372,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         .toISOString()
         .split('T')[0];
 
-      const newLotId = `L-MERGE-${Date.now().toString().slice(-4)}`;
+      const newLotId = `L-MERGE-${Date.now().toString().slice(-6)}${Math.floor(Math.random() * 100).toString().padStart(2, "0")}`;
       const mergedLot: Lot = {
         ...existingLotInPen,
         id: newLotId,
@@ -396,6 +398,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     } else {
       const { error } = await supabase.from('fc_lots').insert(lotToDb(lot));
       if (error) throw error;
+
+      // Registra Entry inicial do lote (fonte única da verdade)
+      await addMovement({
+        id: `m-entry-${Date.now()}`,
+        date: lot.entryDate,
+        lotId: lot.id,
+        type: MovementType.Entry,
+        quantity: lot.headCount,
+        notes: 'Entrada inicial do lote',
+      });
     }
   };
 
@@ -532,6 +544,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   // ----- Movement orchestration (split/merge/transfer/exit) -----
+  // Lógica de transferência entre baias preservando histórico:
+  //   Caso 1: TODOS animais + baia destino vazia       → só muda currentPenId (preserva tudo)
+  //   Caso 2: PARCIAL animais + baia destino vazia     → cria split lot mantendo entryDate/initialWeight
+  //   Caso 3: TODOS animais + baia destino com lote    → mescla ponderada (fecha origem e destino, cria merge)
+  //   Caso 4: PARCIAL animais + baia destino com lote  → mescla ponderada parcial (fecha destino, mantém origem reduzida)
   const executeMovement = async (mov: Partial<AnimalMovement>) => {
     if (!mov.lotId || !mov.type || !mov.date) return;
 
@@ -541,6 +558,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const quantity = mov.quantity || 0;
     const currentCount = getActiveHeadCount(sourceLot.id);
 
+    // 1. Registra a movement principal (Death/Exit/Refusal/Transfer com lotId = origem)
     const movement: AnimalMovement = {
       id: `m-${Date.now()}`,
       date: mov.date,
@@ -553,92 +571,132 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     };
     await addMovement(movement);
 
-    if (mov.type === MovementType.Transfer && mov.destinationPenId) {
-      const destinationPenId = mov.destinationPenId;
-      const existingLotInDest = lots.find(
-        (l) => l.currentPenId === destinationPenId && l.status === 'ACTIVE'
-      );
+    // 2. Se NÃO for transferência, terminamos. Death/Exit/Refusal já reduziram via deltaTotal.
+    if (mov.type !== MovementType.Transfer || !mov.destinationPenId) {
+      return;
+    }
 
-      const gmd = config.gmdCurves.find((c) => c.id === sourceLot.gmdCurveId)?.gmd || 0;
-      const dof = calculateDaysOnFeed(sourceLot.entryDate, mov.date);
-      const projectedWeight = calculateProjectedWeight(sourceLot.initialWeight, gmd, dof);
+    // 3. Lógica de transferência
+    const destinationPenId = mov.destinationPenId;
+    // Considera "lote no destino" só se tiver cabeças ativas (status ACTIVE pode estar com 0 cab)
+    const existingLotInDest = lots.find(
+      (l) =>
+        l.currentPenId === destinationPenId &&
+        l.status === 'ACTIVE' &&
+        l.id !== sourceLot.id &&
+        getActiveHeadCount(l.id) > 0
+    );
+    const isFullTransfer = quantity >= currentCount;
 
-      if (existingLotInDest) {
-        const destCount = getActiveHeadCount(existingLotInDest.id);
-        const destGmd =
-          config.gmdCurves.find((c) => c.id === existingLotInDest.gmdCurveId)?.gmd || 0;
-        const destDof = calculateDaysOnFeed(existingLotInDest.entryDate, mov.date);
-        const destProjectedWeight = calculateProjectedWeight(
-          existingLotInDest.initialWeight,
-          destGmd,
-          destDof
-        );
-
-        const newTotalCount = quantity + destCount;
-        const avgProjectedWeight =
-          (projectedWeight * quantity + destProjectedWeight * destCount) / newTotalCount;
-        const avgDof = (dof * quantity + destDof * destCount) / newTotalCount;
-
-        const newEntryDate = new Date(
-          new Date(mov.date).getTime() - avgDof * 24 * 60 * 60 * 1000
-        )
-          .toISOString()
-          .split('T')[0];
-
-        const newLotId = `L-MERGE-${Date.now().toString().slice(-4)}`;
-        const mergedLot: Lot = {
-          ...existingLotInDest,
+    if (!existingLotInDest) {
+      // Baia destino VAZIA
+      if (isFullTransfer) {
+        // Caso 1: move o lote inteiro pra nova baia (preserva tudo)
+        await updateLot(sourceLot.id, { currentPenId: destinationPenId });
+      } else {
+        // Caso 2: split parcial preservando histórico (entryDate, initialWeight, GMD, dieta)
+        const newLotId = `L-SPLIT-${Date.now().toString().slice(-6)}${Math.floor(Math.random() * 100).toString().padStart(2, "0")}`;
+        const splitLot: Lot = {
+          ...sourceLot,
           id: newLotId,
-          name: `${existingLotInDest.name} + Part. ${sourceLot.name}`,
-          initialWeight: avgProjectedWeight,
-          entryDate: newEntryDate,
-          headCount: newTotalCount,
+          name: `${sourceLot.name} (parc.)`,
+          headCount: quantity,
+          currentPenId: destinationPenId,
+          // Preserva histórico — NÃO resetar entryDate nem initialWeight
+          entryDate: sourceLot.entryDate,
+          initialWeight: sourceLot.initialWeight,
+          dietHistory: sourceLot.dietHistory,
           status: 'ACTIVE',
         };
 
-        await updateLot(existingLotInDest.id, { status: 'CLOSED' });
-        const { error } = await supabase.from('fc_lots').insert(lotToDb(mergedLot));
+        // Insere o split direto (não passa pelo addLot pra evitar lógica de mescla)
+        const { error } = await supabase.from('fc_lots').insert(lotToDb(splitLot));
         if (error) throw error;
 
         await addMovement({
-          id: `m-merge-in-entry-${Date.now()}`,
+          id: `m-split-in-${Date.now()}`,
           date: mov.date,
-          lotId: mergedLot.id,
+          lotId: newLotId,
           type: MovementType.Entry,
-          quantity: newTotalCount,
-          notes: `Lote criado por mescla: ${quantity} cab de ${sourceLot.name} + ${destCount} cab de ${existingLotInDest.name}`,
+          quantity,
+          notes: `Originado por cisão do lote ${sourceLot.name}`,
         });
-
-        if (quantity >= currentCount) {
-          await updateLot(sourceLot.id, { status: 'CLOSED' });
-        }
-      } else {
-        if (quantity >= currentCount) {
-          await updateLot(sourceLot.id, { currentPenId: destinationPenId });
-        } else {
-          const newLotId = `L-SPLIT-${Date.now().toString().slice(-4)}`;
-          const splitLot: Lot = {
-            ...sourceLot,
-            id: newLotId,
-            name: `${sourceLot.name} (Split)`,
-            headCount: quantity,
-            currentPenId: destinationPenId,
-            initialWeight: projectedWeight,
-            entryDate: mov.date,
-            status: 'ACTIVE',
-          };
-          await addLot(splitLot);
-          await addMovement({
-            id: `m-split-in-${Date.now()}`,
-            date: mov.date,
-            lotId: newLotId,
-            type: MovementType.Entry,
-            quantity,
-            notes: `Originado por cisão do lote ${sourceLot.name}`,
-          });
-        }
       }
+      return;
     }
+
+    // Baia destino COM lote ativo — mescla ponderada
+    const destCount = getActiveHeadCount(existingLotInDest.id);
+
+    // Pesos projetados pra média ponderada
+    const sourceGmd = config.gmdCurves.find((c) => c.id === sourceLot.gmdCurveId)?.gmd || 0;
+    const sourceDof = calculateDaysOnFeed(sourceLot.entryDate, mov.date);
+    const sourceProjectedWeight = calculateProjectedWeight(
+      sourceLot.initialWeight,
+      sourceGmd,
+      sourceDof
+    );
+
+    const destGmd = config.gmdCurves.find((c) => c.id === existingLotInDest.gmdCurveId)?.gmd || 0;
+    const destDof = calculateDaysOnFeed(existingLotInDest.entryDate, mov.date);
+    const destProjectedWeight = calculateProjectedWeight(
+      existingLotInDest.initialWeight,
+      destGmd,
+      destDof
+    );
+
+    const newTotalCount = quantity + destCount;
+    // Peso médio ponderado por nº de cabeças
+    const avgProjectedWeight =
+      (sourceProjectedWeight * quantity + destProjectedWeight * destCount) / newTotalCount;
+    const avgDof = (sourceDof * quantity + destDof * destCount) / newTotalCount;
+
+    // entryDate ajustado pra refletir DOF médio do grupo
+    const newEntryDate = new Date(
+      new Date(mov.date).getTime() - avgDof * 24 * 60 * 60 * 1000
+    )
+      .toISOString()
+      .split('T')[0];
+
+    const newLotId = `L-MERGE-${Date.now().toString().slice(-6)}${Math.floor(Math.random() * 100).toString().padStart(2, "0")}`;
+    const mergedLot: Lot = {
+      ...existingLotInDest,
+      id: newLotId,
+      name: `${existingLotInDest.name} + ${quantity}cab ${sourceLot.name}`,
+      // initialWeight = peso projetado médio (no momento da mescla, equivalente a "peso inicial")
+      initialWeight: avgProjectedWeight,
+      entryDate: newEntryDate,
+      headCount: newTotalCount,
+      currentPenId: destinationPenId,
+      // Mantém a dieta atual do destino (assume que vão pra essa)
+      currentDietId: existingLotInDest.currentDietId,
+      dietHistory: existingLotInDest.dietHistory,
+      dietChangeDate: existingLotInDest.dietChangeDate,
+      status: 'ACTIVE',
+    };
+
+    // Fecha o lote destino
+    await updateLot(existingLotInDest.id, { status: 'CLOSED' });
+
+    // Caso 3: transfer total — fecha também a origem
+    if (isFullTransfer) {
+      await updateLot(sourceLot.id, { status: 'CLOSED' });
+    }
+    // Caso 4: parcial — origem mantém ACTIVE com qty reduzida (já registrado pelo movement Transfer acima)
+
+    // Cria o merged lot
+    const { error } = await supabase.from('fc_lots').insert(lotToDb(mergedLot));
+    if (error) throw error;
+
+    // Entry no merged lot
+    await addMovement({
+      id: `m-merge-in-entry-${Date.now()}`,
+      date: mov.date,
+      lotId: mergedLot.id,
+      type: MovementType.Entry,
+      quantity: newTotalCount,
+      notes: `Mescla: ${quantity} cab de ${sourceLot.name} + ${destCount} cab de ${existingLotInDest.name}`,
+    });
   };
 
   // ----- Bulk reset -----

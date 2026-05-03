@@ -118,7 +118,7 @@ const FeedSheet: React.FC = () => {
     });
 
     setEntries(newEntries);
-  }, [selectedDate, lots, pens, diets, feedHistory, config]); // Removed cyclic deps
+  }, [selectedDate, lots, pens, diets, feedHistory, config, headCounts]); // Inclui headCounts para reatividade a movements
 
   const handleBunkScoreChange = (index: number, value: string) => {
     const score = parseFloat(value) as BunkScore;
@@ -214,7 +214,18 @@ const FeedSheet: React.FC = () => {
       deviationPercent: deviation
     };
 
-    addFeedRecord(record);
+    try {
+      await addFeedRecord(record);
+    } catch (err) {
+      console.error('[handleSave] Erro ao salvar ficha:', err);
+      alert('Erro ao salvar a ficha de trato. Verifique sua conexão.');
+      setEntries(prev => {
+        const n = [...prev];
+        n[index] = { ...n[index], isSaving: false };
+        return n;
+      });
+      return;
+    }
     
     setEntries(prev => {
       const n = [...prev];
