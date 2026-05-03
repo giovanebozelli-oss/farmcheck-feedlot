@@ -1,0 +1,12 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# SPA: redireciona tudo pra index.html (HashRouter cuida do resto no client)
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
