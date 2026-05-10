@@ -3,9 +3,9 @@ import React, { useState } from 'react';
 import { useAppStore } from '../context';
 import { calculateDaysOnFeed, calculateProjectedWeight, formatCurrency, calculateAllHeadCounts } from '../utils';
 import { FileDown, FileText, Lock, Unlock, X, TrendingUp, ChevronRight, Trash2, Wheat } from 'lucide-react';
-import { generateZootecnicoPDF } from '../utils/pdfGenerator';
-import { MovementType } from '../types';
-import { generateZootecnicoExcel } from '../utils/excelGenerator';
+import { generateZootecnicoPDF, generateInsumosPDF } from '../utils/pdfGenerator';
+import { generateZootecnicoExcel, generateInsumosExcel } from '../utils/excelGenerator';
+import { MovementType, Lot, Pen, Diet, Ingredient, DailyFeedRecord } from '../types';
 import { 
   XAxis, 
   YAxis, 
@@ -20,12 +20,82 @@ import {
   Cell
 } from 'recharts';
 
+// Helper: calcula consumo de insumos no período (e opcionalmente filtra por lote)
+function computeInsumosUsage(
+  feedHistory: DailyFeedRecord[],
+  diets: Diet[],
+  ingredients: Ingredient[],
+  startDate: string,
+  endDate: string,
+  lotIdFilter?: string
+) {
+  const usage: Record<string, { quantity: number; cost: number }> = {};
+
+  feedHistory
+    .filter((r) => r.date >= startDate && r.date <= endDate)
+    .filter((r) => !lotIdFilter || r.lotId === lotIdFilter)
+    .forEach((record) => {
+      // Step intra-dia: se houver dietsPerTrato, distribui MN proporcionalmente
+      const tratos = record.dietsPerTrato;
+      const totalDrops = Array.isArray(record.drops) ? record.drops.length : 0;
+
+      if (tratos && totalDrops > 0 && tratos.length === totalDrops) {
+        // Cada trato com sua dieta — pesos = drop reais
+        record.drops.forEach((drop, idx) => {
+          const dietId = tratos[idx] || record.dietId;
+          const diet = diets.find((d) => d.id === dietId);
+          if (!diet) return;
+          const dropMN = typeof drop === 'number' ? drop : (drop as any)?.actualMN || 0;
+          if (dropMN <= 0) return;
+          diet.ingredients.forEach((item) => {
+            const ing = ingredients.find((i) => i.id === item.ingredientId);
+            if (!ing) return;
+            const amount = dropMN * ((item.inclusionMNPercentage || 0) / 100);
+            const cost = amount * ((ing.pricePerTon || 0) / 1000);
+            if (!usage[ing.id]) usage[ing.id] = { quantity: 0, cost: 0 };
+            usage[ing.id].quantity += amount;
+            usage[ing.id].cost += cost;
+          });
+        });
+      } else {
+        // Fluxo tradicional — 1 dieta para o dia inteiro
+        const diet = diets.find((d) => d.id === record.dietId);
+        if (!diet) return;
+        diet.ingredients.forEach((item) => {
+          const ing = ingredients.find((i) => i.id === item.ingredientId);
+          if (!ing) return;
+          const amount = record.actualTotalMN * ((item.inclusionMNPercentage || 0) / 100);
+          const cost = amount * ((ing.pricePerTon || 0) / 1000);
+          if (!usage[ing.id]) usage[ing.id] = { quantity: 0, cost: 0 };
+          usage[ing.id].quantity += amount;
+          usage[ing.id].cost += cost;
+        });
+      }
+    });
+
+  return Object.entries(usage)
+    .map(([id, data]) => {
+      const ing = ingredients.find((i) => i.id === id);
+      return {
+        id,
+        name: ing?.name || '?',
+        totalQuantity: data.quantity,
+        totalCost: data.cost,
+        pricePerTon: ing?.pricePerTon || 0,
+      };
+    })
+    .sort((a, b) => b.totalQuantity - a.totalQuantity);
+}
+
 const Reports: React.FC = () => {
-  const { lots, pens, diets, feedHistory, categories, movements, deleteFeedRecord, deleteMovement, config } = useAppStore();
+  const { lots, pens, diets, feedHistory, ingredients, categories, movements, deleteFeedRecord, deleteMovement, config } = useAppStore();
   const [activeTab, setActiveTab] = useState<'zootecnico' | 'fechamento' | 'insumos' | 'registros'>('zootecnico');
   const [selectedLotId, setSelectedLotId] = useState<string | null>(null);
   const [selectedPenId, setSelectedPenId] = useState<string | null>(null);
-  
+
+  // Filtro de lote pra aba de Insumos (vazio = todos os lotes)
+  const [insumosLotFilter, setInsumosLotFilter] = useState<string>('');
+
   const today = new Date().toISOString().split('T')[0];
   const [analysisDate, setAnalysisDate] = useState(today);
   const [startDate, setStartDate] = useState(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
@@ -174,18 +244,88 @@ const Reports: React.FC = () => {
 
   const [showExportOptions, setShowExportOptions] = useState(false);
 
+  // Calcula dados de insumos pro filtro atual (compartilhado com a aba Insumos)
+  const insumosUsageData = React.useMemo(
+    () => computeInsumosUsage(feedHistory, diets, ingredients, startDate, endDate, insumosLotFilter || undefined),
+    [feedHistory, diets, ingredients, startDate, endDate, insumosLotFilter]
+  );
+
   const handleExportPDF = () => {
-    if (activeTab === 'zootecnico') {
-      generateZootecnicoPDF(zootecnicoData, analysisDate);
-    }
     setShowExportOptions(false);
+    try {
+      if (activeTab === 'zootecnico') {
+        if (!zootecnicoData || zootecnicoData.length === 0) {
+          alert(
+            'Nenhum lote ativo nesta data. Verifique:\n\n' +
+            '1. Se há lotes cadastrados (Banco de Dados / Movimentação)\n' +
+            '2. Se a data de análise é igual ou posterior à entrada\n' +
+            '3. Se as cabeças ativas > 0 (sem mortes excedendo)'
+          );
+          return;
+        }
+        generateZootecnicoPDF(zootecnicoData, analysisDate);
+      } else if (activeTab === 'insumos') {
+        if (!insumosUsageData || insumosUsageData.length === 0) {
+          alert(
+            'Nenhum consumo de insumo no período selecionado.\n\n' +
+            'Para gerar este relatório, é necessário ter pelo menos uma ' +
+            'Ficha de Trato salva no período entre as datas escolhidas.'
+          );
+          return;
+        }
+        const lotName = insumosLotFilter
+          ? lots.find((l) => l.id === insumosLotFilter)?.name || insumosLotFilter
+          : undefined;
+        generateInsumosPDF(insumosUsageData, startDate, endDate, lotName);
+      } else if (activeTab === 'fechamento') {
+        alert('Use o botão de exportar dentro do card do lote para gerar o fechamento individual.');
+      } else {
+        alert('Esta aba ainda não tem exportação. Use Acompanhamento Zootécnico ou Consumo de Insumos.');
+      }
+    } catch (err) {
+      console.error('[handleExportPDF] Erro:', err);
+      const msg = err instanceof Error ? err.message : String(err);
+      alert(`Erro ao gerar PDF:\n${msg}\n\nVeja o console (F12) para mais detalhes.`);
+    }
   };
 
   const handleExportExcel = () => {
-    if (activeTab === 'zootecnico') {
-      generateZootecnicoExcel(zootecnicoData, analysisDate);
-    }
     setShowExportOptions(false);
+    try {
+      if (activeTab === 'zootecnico') {
+        if (!zootecnicoData || zootecnicoData.length === 0) {
+          alert(
+            'Nenhum lote ativo nesta data. Verifique:\n\n' +
+            '1. Se há lotes cadastrados (Banco de Dados / Movimentação)\n' +
+            '2. Se a data de análise é igual ou posterior à entrada\n' +
+            '3. Se as cabeças ativas > 0 (sem mortes excedendo)'
+          );
+          return;
+        }
+        generateZootecnicoExcel(zootecnicoData, analysisDate);
+      } else if (activeTab === 'insumos') {
+        if (!insumosUsageData || insumosUsageData.length === 0) {
+          alert(
+            'Nenhum consumo de insumo no período selecionado.\n\n' +
+            'Para gerar este relatório, é necessário ter pelo menos uma ' +
+            'Ficha de Trato salva no período entre as datas escolhidas.'
+          );
+          return;
+        }
+        const lotName = insumosLotFilter
+          ? lots.find((l) => l.id === insumosLotFilter)?.name || insumosLotFilter
+          : undefined;
+        generateInsumosExcel(insumosUsageData, startDate, endDate, lotName);
+      } else if (activeTab === 'fechamento') {
+        alert('Use o botão de exportar dentro do card do lote para gerar o fechamento individual.');
+      } else {
+        alert('Esta aba ainda não tem exportação. Use Acompanhamento Zootécnico ou Consumo de Insumos.');
+      }
+    } catch (err) {
+      console.error('[handleExportExcel] Erro:', err);
+      const msg = err instanceof Error ? err.message : String(err);
+      alert(`Erro ao gerar Excel:\n${msg}\n\nVeja o console (F12) para mais detalhes.`);
+    }
   };
 
   return (
@@ -385,7 +525,13 @@ const Reports: React.FC = () => {
           ) : activeTab === 'fechamento' ? (
             <FechamentoReport analysisDate={analysisDate} headCounts={headCounts} />
           ) : activeTab === 'insumos' ? (
-            <InsumosReport startDate={startDate} endDate={endDate} />
+            <InsumosReport
+              startDate={startDate}
+              endDate={endDate}
+              usageData={insumosUsageData}
+              lotFilter={insumosLotFilter}
+              setLotFilter={setInsumosLotFilter}
+            />
           ) : (
             <RegistrosTab />
           )}
@@ -630,61 +776,83 @@ const FechamentoReport: React.FC<{ analysisDate: string, headCounts: Record<stri
   );
 }
 
-const InsumosReport: React.FC<{ startDate: string, endDate: string }> = ({ startDate, endDate }) => {
-  const { ingredients, diets, feedHistory } = useAppStore();
+interface InsumosReportProps {
+  startDate: string;
+  endDate: string;
+  usageData: ReturnType<typeof computeInsumosUsage>;
+  lotFilter: string;
+  setLotFilter: (id: string) => void;
+}
 
-  const usageData = React.useMemo(() => {
-    const usage: Record<string, { quantity: number, cost: number }> = {};
-    
-    feedHistory
-      .filter(record => record.date >= startDate && record.date <= endDate)
-      .forEach(record => {
-        const diet = diets.find(d => d.id === record.dietId);
-        if (!diet) return;
-
-        diet.ingredients.forEach(item => {
-          const ing = ingredients.find(i => i.id === item.ingredientId);
-          if (!ing) return;
-
-          const amount = record.actualTotalMN * (item.inclusionMNPercentage / 100);
-          const cost = amount * (ing.pricePerTon / 1000);
-
-          if (!usage[ing.id]) {
-            usage[ing.id] = { quantity: 0, cost: 0 };
-          }
-          usage[ing.id].quantity += amount;
-          usage[ing.id].cost += cost;
-        });
-      });
-
-    return Object.entries(usage).map(([id, data]) => {
-      const ing = ingredients.find(i => i.id === id);
-      return {
-        id,
-        name: ing?.name || '?',
-        totalQuantity: data.quantity,
-        totalCost: data.cost,
-        pricePerTon: ing?.pricePerTon || 0
-      };
-    }).sort((a, b) => b.totalQuantity - a.totalQuantity);
-  }, [ingredients, diets, feedHistory, startDate, endDate]);
+const InsumosReport: React.FC<InsumosReportProps> = ({ startDate, endDate, usageData, lotFilter, setLotFilter }) => {
+  const { lots } = useAppStore();
 
   const totalPeriodCost = usageData.reduce((acc, curr) => acc + curr.totalCost, 0);
   const totalPeriodQty = usageData.reduce((acc, curr) => acc + curr.totalQuantity, 0);
 
+  // Lotes pra dropdown — separa ATIVO de FECHADO/ABATIDO
+  const sortedLots = React.useMemo(() => {
+    return [...lots].sort((a, b) => {
+      // Ativos primeiro, depois alfabético
+      if (a.status !== b.status) return a.status === 'ACTIVE' ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+  }, [lots]);
+
+  const selectedLot = lotFilter ? lots.find((l) => l.id === lotFilter) : null;
+
   return (
     <div className="space-y-6">
+       {/* Filtro de lote */}
+       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center gap-3">
+         <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">
+           Filtrar por lote:
+         </label>
+         <select
+           value={lotFilter}
+           onChange={(e) => setLotFilter(e.target.value)}
+           className="flex-1 max-w-md px-3 py-2 border border-slate-200 rounded-lg bg-white text-sm font-bold focus:ring-2 focus:ring-emerald-500 outline-none"
+         >
+           <option value="">Todos os lotes (geral)</option>
+           <optgroup label="Lotes ativos">
+             {sortedLots.filter((l) => l.status === 'ACTIVE').map((l) => (
+               <option key={l.id} value={l.id}>{l.name} ({l.headCount} cab)</option>
+             ))}
+           </optgroup>
+           <optgroup label="Lotes fechados / abatidos">
+             {sortedLots.filter((l) => l.status === 'CLOSED').map((l) => (
+               <option key={l.id} value={l.id}>{l.name} (encerrado)</option>
+             ))}
+           </optgroup>
+         </select>
+         {selectedLot && (
+           <div className="flex items-center gap-2">
+             <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-1 rounded ${selectedLot.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
+               {selectedLot.status === 'ACTIVE' ? 'EM CURSO' : 'ABATIDO'}
+             </span>
+             <button
+               onClick={() => setLotFilter('')}
+               className="text-[10px] font-bold text-slate-500 hover:text-red-600 underline"
+             >
+               Limpar
+             </button>
+           </div>
+         )}
+       </div>
+
        {/* Summary Cards */}
        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-             <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Custo Total em Insumos</div>
+             <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">
+               {selectedLot ? `Custo do lote ${selectedLot.name}` : 'Custo Total em Insumos'}
+             </div>
              <div className="text-3xl font-black text-emerald-600">{formatCurrency(totalPeriodCost)}</div>
              <div className="text-[10px] text-slate-400 mt-1">No período de {startDate.split('-').reverse().join('/')} a {endDate.split('-').reverse().join('/')}</div>
           </div>
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
              <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Volume Total Distribuído</div>
              <div className="text-3xl font-black text-slate-900">{(totalPeriodQty / 1000).toFixed(2)} <span className="text-sm font-bold text-slate-400">Ton MN</span></div>
-             <div className="text-[10px] text-slate-400 mt-1">Média de {(totalPeriodQty / usageData.length / 1000 || 0).toFixed(2)} Ton por ingrediente</div>
+             <div className="text-[10px] text-slate-400 mt-1">{usageData.length > 0 ? `${usageData.length} ingredientes` : 'Sem registros'}</div>
           </div>
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-center">
              <div className="text-center">
@@ -701,7 +869,9 @@ const InsumosReport: React.FC<{ startDate: string, endDate: string }> = ({ start
        {/* Usage Details */}
        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
           <div className="p-4 border-b bg-slate-50 flex justify-between items-center">
-             <h3 className="text-sm font-black text-slate-700 uppercase tracking-tighter">Consumo Detalhado por Ingrediente</h3>
+             <h3 className="text-sm font-black text-slate-700 uppercase tracking-tighter">
+               {selectedLot ? `Consumo de ${selectedLot.name}` : 'Consumo Detalhado por Ingrediente'}
+             </h3>
              <span className="text-[10px] font-bold text-slate-400 uppercase">Período: {startDate.split('-').reverse().join('/')} - {endDate.split('-').reverse().join('/')}</span>
           </div>
           <div className="overflow-x-auto">
@@ -717,7 +887,11 @@ const InsumosReport: React.FC<{ startDate: string, endDate: string }> = ({ start
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                    {usageData.length === 0 ? (
-                      <tr><td colSpan={5} className="p-12 text-center text-slate-400 italic">Nenhum registro de trato encontrado no período selecionado.</td></tr>
+                      <tr><td colSpan={5} className="p-12 text-center text-slate-400 italic">
+                        {selectedLot
+                          ? `Nenhum registro de trato encontrado para ${selectedLot.name} no período.`
+                          : 'Nenhum registro de trato encontrado no período selecionado.'}
+                      </td></tr>
                    ) : usageData.map((row) => (
                       <tr key={row.id} className="hover:bg-slate-50 transition-colors">
                          <td className="px-6 py-4 font-black text-slate-900 border-l-4 border-emerald-500 italic uppercase">{row.name}</td>
@@ -731,7 +905,7 @@ const InsumosReport: React.FC<{ startDate: string, endDate: string }> = ({ start
                 {usageData.length > 0 && (
                    <tfoot className="bg-slate-50 border-t-2 border-slate-200 font-black">
                       <tr>
-                         <td className="px-6 py-4 uppercase">Totais Aditados</td>
+                         <td className="px-6 py-4 uppercase">Total</td>
                          <td className="px-6 py-4 text-center">{totalPeriodQty.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })} kg</td>
                          <td className="px-6 py-4 text-center">{(totalPeriodQty / 1000).toFixed(3)} Ton</td>
                          <td></td>

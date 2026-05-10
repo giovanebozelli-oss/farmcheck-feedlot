@@ -111,7 +111,13 @@ export interface DailyFeedRecord {
   date: string;
   lotId: string;
   penId: string;
-  dietId: string;
+  dietId: string; // dieta principal (rótulo)
+  /**
+   * Step intra-dia: dieta de cada trato.
+   * Se undefined ou todas as posições === dietId, é fluxo tradicional (1 dieta/dia).
+   * Quando alguma posição é diferente, o MN é calculado por trato.
+   */
+  dietsPerTrato?: string[];
   headCount: number;
   
   // Weights and Days

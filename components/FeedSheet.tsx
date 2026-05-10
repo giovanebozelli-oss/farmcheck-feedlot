@@ -19,16 +19,20 @@ interface SheetEntry {
   penName: string;
   headCount: number;
   dietName: string;
-  dietId: string;
+  dietId: string;       // dieta principal (rótulo)
   dietMS: number;
   dietCost: number;
-  
+
+  // Step intra-dia: dieta de cada trato. Length = config.numTreatments.
+  // Por padrão todos = dietId. Quando alguma posição diverge, "modo step" ativo.
+  dietsPerTrato: string[];
+
   // Logic F-13
   prevConsumptionMS: number; // Consumption from D-1 or Estimate
-  
+
   bunkScore: BunkScore;
   drops: number[]; // Dynamic number of treatments
-  
+
   daysOnFeed: number;
   projectedWeight: number;
   isSaved: boolean;
@@ -80,7 +84,16 @@ const FeedSheet: React.FC = () => {
         prevConsMS = projectedWeight * (initialPV / 100); 
       }
 
+      const numTratos = config.numTreatments || 4;
+
       if (existingRecord) {
+        // Carrega dietsPerTrato do registro salvo (ou inicializa todos = dieta atual se ausente)
+        const savedDiets = (existingRecord as any).dietsPerTrato as string[] | undefined;
+        const dietsPerTrato =
+          savedDiets && savedDiets.length === numTratos
+            ? savedDiets
+            : Array(numTratos).fill(existingRecord.dietId || diet?.id || '');
+
         return {
           lotId: lot.id,
           penName: pen?.name || '?',
@@ -89,9 +102,10 @@ const FeedSheet: React.FC = () => {
           dietId: diet?.id || '',
           dietMS: diet?.calculatedDryMatter || 0,
           dietCost: diet?.calculatedCostPerKg || 0,
+          dietsPerTrato,
           prevConsumptionMS: prevConsMS,
           bunkScore: existingRecord.bunkScoreYesterday,
-          drops: existingRecord.drops || Array(config.numTreatments || 4).fill(0),
+          drops: existingRecord.drops || Array(numTratos).fill(0),
           daysOnFeed,
           projectedWeight,
           isSaved: true,
@@ -107,9 +121,10 @@ const FeedSheet: React.FC = () => {
         dietId: diet?.id || '',
         dietMS: diet?.calculatedDryMatter || 60, // Fallback safe div
         dietCost: diet?.calculatedCostPerKg || 0,
+        dietsPerTrato: Array(numTratos).fill(diet?.id || ''),
         prevConsumptionMS: prevConsMS,
         bunkScore: BunkScore.Zero,
-        drops: Array(config.numTreatments || 4).fill(0),
+        drops: Array(numTratos).fill(0),
         daysOnFeed,
         projectedWeight,
         isSaved: false,
@@ -119,6 +134,62 @@ const FeedSheet: React.FC = () => {
 
     setEntries(newEntries);
   }, [selectedDate, lots, pens, diets, feedHistory, config, headCounts]); // Inclui headCounts para reatividade a movements
+
+  /**
+   * Cálculo MN considerando step intra-dia.
+   * - msTotalKg = total de matéria seca alvo no dia
+   * - tratoProportions = proporções (em %) de cada trato (somam 100)
+   * - dietsPerTrato = ID da dieta usada em cada trato
+   * - dietsList = todas as dietas (pra lookup do MS%)
+   * Retorna { dropPredictions: kg MN por trato, totalMN: soma }
+   */
+  const calculateMNWithStep = (
+    msTotalKg: number,
+    tratoProportions: number[],
+    dietsPerTrato: string[],
+    dietsList: typeof diets,
+    fallbackMSPercent: number
+  ): { dropPredictions: number[]; totalMN: number } => {
+    const dropPredictions: number[] = tratoProportions.map((prop, i) => {
+      const msTrato = msTotalKg * (prop / 100); // kg MS daquele trato
+      const dietId = dietsPerTrato[i];
+      const dietForTrato = dietsList.find(d => d.id === dietId);
+      const msPercent = dietForTrato?.calculatedDryMatter || fallbackMSPercent;
+      // kg MN do trato = kg MS / (MS% / 100)
+      return Math.round(msTrato / (msPercent / 100));
+    });
+    const totalMN = dropPredictions.reduce((a, b) => a + b, 0);
+    return { dropPredictions, totalMN };
+  };
+
+  /** Soma o custo R$/cabeça considerando step intra-dia */
+  const calculateCostWithStep = (
+    actualDrops: number[],
+    dietsPerTrato: string[],
+    dietsList: typeof diets,
+    headCount: number,
+    fallbackCost: number
+  ): number => {
+    if (headCount <= 0) return 0;
+    let totalCost = 0;
+    for (let i = 0; i < actualDrops.length; i++) {
+      const dropMN = actualDrops[i] || 0;
+      const dietForTrato = dietsList.find(d => d.id === dietsPerTrato[i]);
+      const costPerKg = dietForTrato?.calculatedCostPerKg ?? fallbackCost;
+      totalCost += dropMN * costPerKg;
+    }
+    return totalCost / headCount;
+  };
+
+  const handleTratoDietChange = (entryIndex: number, tratoIndex: number, dietId: string) => {
+    setEntries(prev => {
+      const n = [...prev];
+      const newDietsPerTrato = [...n[entryIndex].dietsPerTrato];
+      newDietsPerTrato[tratoIndex] = dietId;
+      n[entryIndex] = { ...n[entryIndex], dietsPerTrato: newDietsPerTrato, isSaved: false };
+      return n;
+    });
+  };
 
   const handleBunkScoreChange = (index: number, value: string) => {
     const score = parseFloat(value) as BunkScore;
@@ -150,13 +221,16 @@ const FeedSheet: React.FC = () => {
       // Update local entry state to reflect change immediately
       setEntries(prev => {
         const n = [...prev];
+        const numTratos = n[index].dietsPerTrato.length || (config.numTreatments || 4);
         n[index] = { 
           ...n[index], 
           dietId: diet.id, 
           dietName: diet.name, 
           dietMS: diet.calculatedDryMatter, 
           dietCost: diet.calculatedCostPerKg,
-          isSaved: false // Re-enable saving if changed
+          // Reseta o step: todos os tratos voltam pra dieta principal
+          dietsPerTrato: Array(numTratos).fill(diet.id),
+          isSaved: false
         };
         return n;
       });
@@ -174,25 +248,68 @@ const FeedSheet: React.FC = () => {
     await new Promise(resolve => setTimeout(resolve, 600));
 
     const entry = entries[index];
-    
-    // Recalculate everything to save consistent state
+
+    // Recalcula com step intra-dia
     const adjustment = getAdjustmentForScore(entry.bunkScore, config.bunkScoreAdjustments || []);
-    
-    // F-13: ConsPrev(d) = ConsOcorrido(d-1) * (1 + Correction)
     const predictedMSPerHead = entry.prevConsumptionMS * (1 + (adjustment / 100));
-    const predictedMNPerHead = predictedMSPerHead / (entry.dietMS / 100);
-    const predictedTotalMN = Math.round(predictedMNPerHead * entry.headCount);
-    
+    const msTotalKg = predictedMSPerHead * entry.headCount; // kg MS total previsto pra hoje
+
+    // Detecta se está em "modo step" (algum trato com dieta diferente da principal)
+    const isStepMode = entry.dietsPerTrato.some(d => d !== entry.dietId);
+
+    let predictedTotalMN: number;
+    if (isStepMode) {
+      const result = calculateMNWithStep(
+        msTotalKg,
+        config.treatmentProportions || [25, 25, 25, 25],
+        entry.dietsPerTrato,
+        diets,
+        entry.dietMS
+      );
+      predictedTotalMN = result.totalMN;
+    } else {
+      // Modo tradicional: 1 dieta o dia inteiro
+      const predictedMNPerHead = predictedMSPerHead / (entry.dietMS / 100);
+      predictedTotalMN = Math.round(predictedMNPerHead * entry.headCount);
+    }
+
     const actualTotalMN = entry.drops.reduce((a, b) => a + b, 0);
     const deviation = calculateDeviation(actualTotalMN, predictedTotalMN);
-    
-    const metrics = calculateConsumptionMetrics(
-      actualTotalMN, 
-      entry.headCount, 
-      entry.dietMS, 
-      entry.projectedWeight, 
-      entry.dietCost
-    );
+
+    // Métricas: se step ativo, calcula custo por trato; senão usa metric padrão
+    let costPerHead: number;
+    let actualMSPerHead: number;
+    let actualMSPercentPV: number;
+
+    if (isStepMode) {
+      costPerHead = calculateCostWithStep(
+        entry.drops,
+        entry.dietsPerTrato,
+        diets,
+        entry.headCount,
+        entry.dietCost
+      );
+      // MS real: soma de (drop * MS%/100) por trato
+      let msTotalReal = 0;
+      for (let i = 0; i < entry.drops.length; i++) {
+        const dietForTrato = diets.find(d => d.id === entry.dietsPerTrato[i]);
+        const msPercent = dietForTrato?.calculatedDryMatter || entry.dietMS;
+        msTotalReal += (entry.drops[i] || 0) * (msPercent / 100);
+      }
+      actualMSPerHead = entry.headCount > 0 ? msTotalReal / entry.headCount : 0;
+      actualMSPercentPV = entry.projectedWeight > 0 ? (actualMSPerHead / entry.projectedWeight) * 100 : 0;
+    } else {
+      const metrics = calculateConsumptionMetrics(
+        actualTotalMN,
+        entry.headCount,
+        entry.dietMS,
+        entry.projectedWeight,
+        entry.dietCost
+      );
+      costPerHead = metrics.costPerHead;
+      actualMSPerHead = metrics.msPerHead;
+      actualMSPercentPV = metrics.msPercentPV;
+    }
 
     const record: DailyFeedRecord = {
       id: `${selectedDate}_${entry.lotId}`,
@@ -200,6 +317,7 @@ const FeedSheet: React.FC = () => {
       lotId: entry.lotId,
       penId: lots.find(l => l.id === entry.lotId)?.currentPenId || '',
       dietId: entry.dietId,
+      dietsPerTrato: isStepMode ? entry.dietsPerTrato : undefined, // só grava se for diferente
       headCount: entry.headCount,
       daysOnFeed: entry.daysOnFeed,
       projectedWeight: entry.projectedWeight,
@@ -208,9 +326,9 @@ const FeedSheet: React.FC = () => {
       predictedTotalMN,
       actualTotalMN,
       drops: entry.drops,
-      actualDryMatterPerHead: metrics.msPerHead,
-      actualDryMatterPercentPV: metrics.msPercentPV,
-      costPerHead: metrics.costPerHead,
+      actualDryMatterPerHead: actualMSPerHead,
+      actualDryMatterPercentPV: actualMSPercentPV,
+      costPerHead,
       deviationPercent: deviation
     };
 
@@ -248,22 +366,44 @@ const FeedSheet: React.FC = () => {
     const entriesWithPredictions = entries.map(entry => {
       const adjustment = getAdjustmentForScore(entry.bunkScore, config.bunkScoreAdjustments || []);
       const predictedMSPerHead = entry.prevConsumptionMS * (1 + (adjustment / 100));
-      const predictedMNPerHead = predictedMSPerHead / (entry.dietMS / 100);
-      const predictedTotalMN = Math.round(predictedMNPerHead * entry.headCount);
-      
-      // Calculate individual drop predictions including correction for PDF
-      const dropPredictions = Array.from({ length: config.numTreatments || 4 }).map((_, i) => {
-        const isLast = i === (config.numTreatments || 4) - 1;
-        if (!isLast) {
-          return Math.round(predictedTotalMN * ((config.treatmentProportions[i] || 25) / 100));
-        } else {
-          // For PDF we might not have actuals yet if it's being printed for the day
-          // but we follow the same logic
-          return predictedTotalMN - Array.from({ length: i }).reduce<number>((acc, _, idx) => acc + Math.round(predictedTotalMN * ((config.treatmentProportions[idx] || 25) / 100)), 0);
-        }
+      const msTotalKg = predictedMSPerHead * entry.headCount;
+      const isStepMode = entry.dietsPerTrato.some(d => d !== entry.dietId);
+
+      let predictedTotalMN: number;
+      let dropPredictions: number[];
+
+      if (isStepMode) {
+        const result = calculateMNWithStep(
+          msTotalKg,
+          config.treatmentProportions || [25, 25, 25, 25],
+          entry.dietsPerTrato,
+          diets,
+          entry.dietMS
+        );
+        predictedTotalMN = result.totalMN;
+        dropPredictions = result.dropPredictions;
+      } else {
+        const predictedMNPerHead = predictedMSPerHead / (entry.dietMS / 100);
+        predictedTotalMN = Math.round(predictedMNPerHead * entry.headCount);
+        dropPredictions = Array.from({ length: config.numTreatments || 4 }).map((_, i) => {
+          const isLast = i === (config.numTreatments || 4) - 1;
+          if (!isLast) {
+            return Math.round(predictedTotalMN * ((config.treatmentProportions[i] || 25) / 100));
+          } else {
+            return predictedTotalMN - Array.from({ length: i }).reduce<number>(
+              (acc, _, idx) => acc + Math.round(predictedTotalMN * ((config.treatmentProportions[idx] || 25) / 100)), 0
+            );
+          }
+        });
+      }
+
+      // Mapeia IDs de dieta -> nomes pra exibir no PDF
+      const dietsPerTratoNames = entry.dietsPerTrato.map(dId => {
+        const d = diets.find(x => x.id === dId);
+        return d?.name || entry.dietName;
       });
 
-      return { ...entry, predictedTotalMN, dropPredictions };
+      return { ...entry, predictedTotalMN, dropPredictions, dietsPerTrato: dietsPerTratoNames };
     });
     generateFichaTratoPDF(entriesWithPredictions, selectedDate, config.treatmentProportions);
   }}
@@ -321,7 +461,24 @@ const FeedSheet: React.FC = () => {
                 // Convert back to MN: MN = MS / (DietMS%/100)
                 const dietMSFactor = (entry.dietMS || 60) / 100;
                 const predictedMNPerHead = dietMSFactor > 0 ? (predictedMSPerHead / dietMSFactor) : 0;
-                const predictedTotalMN = Math.round((isNaN(predictedMNPerHead) ? 0 : predictedMNPerHead) * (entry.headCount || 0));
+                
+                const isStepMode = entry.dietsPerTrato.some(d => d !== entry.dietId);
+                const msTotalKg = predictedMSPerHead * (entry.headCount || 0);
+
+                // Cálculo do total + drop predictions (step-aware)
+                const stepResult = isStepMode
+                  ? calculateMNWithStep(
+                      msTotalKg,
+                      config.treatmentProportions || [25, 25, 25, 25],
+                      entry.dietsPerTrato,
+                      diets,
+                      entry.dietMS
+                    )
+                  : null;
+
+                const predictedTotalMN = stepResult
+                  ? stepResult.totalMN
+                  : Math.round((isNaN(predictedMNPerHead) ? 0 : predictedMNPerHead) * (entry.headCount || 0));
                 
                 const totalActual = (entry.drops || []).reduce((a, b) => a + (b || 0), 0);
                 const deviation = calculateDeviation(totalActual, predictedTotalMN);
@@ -397,15 +554,22 @@ const FeedSheet: React.FC = () => {
                     {Array.from({ length: config.numTreatments || 4 }).map((_, dropIdx) => {
                       const isLast = dropIdx === (config.numTreatments || 4) - 1;
                       const proportion = config.treatmentProportions[dropIdx] || 25;
-                      
+
+                      // Drop prediction com step se aplicável
                       let dropPrediction = 0;
-                      if (!isLast) {
+                      if (stepResult) {
+                        dropPrediction = stepResult.dropPredictions[dropIdx] || 0;
+                      } else if (!isLast) {
                         dropPrediction = Math.round(predictedTotalMN * (proportion / 100));
                       } else {
-                        // Corrected prediction for the last drop
                         const previousActuals = entry.drops.slice(0, dropIdx).reduce((a, b) => a + b, 0);
                         dropPrediction = Math.max(0, predictedTotalMN - previousActuals);
                       }
+
+                      // Dieta usada nesse trato (lookup pra exibir nome se step ativo)
+                      const tratoDietId = entry.dietsPerTrato[dropIdx] || entry.dietId;
+                      const tratoDiet = diets.find(d => d.id === tratoDietId);
+                      const isDifferentFromMain = tratoDietId !== entry.dietId;
 
                       return (
                         <td key={dropIdx} className="px-4 py-4 text-center">
@@ -421,6 +585,22 @@ const FeedSheet: React.FC = () => {
                                 className={`w-20 px-2 py-1 border rounded text-center focus:ring-2 focus:ring-emerald-500 outline-none disabled:bg-slate-100 ${isLast ? 'border-emerald-300 bg-emerald-50/30' : ''}`}
                                 placeholder={dropPrediction.toFixed(0)}
                               />
+                            {/* Dropdown discreto de dieta por trato (step intra-dia) */}
+                            <select
+                              value={tratoDietId}
+                              onChange={(e) => handleTratoDietChange(index, dropIdx, e.target.value)}
+                              disabled={entry.isSaved}
+                              title={isDifferentFromMain ? `Step ativo: ${tratoDiet?.name || ''}` : 'Mesma dieta principal — clique pra mudar'}
+                              className={`text-[9px] px-1 py-0.5 rounded border max-w-[90px] truncate
+                                ${isDifferentFromMain
+                                  ? 'border-amber-400 bg-amber-50 text-amber-800 font-bold'
+                                  : 'border-slate-200 bg-white text-slate-500'}
+                                disabled:opacity-50`}
+                            >
+                              {diets.filter(d => d.status === 'ACTIVE').map(d => (
+                                <option key={d.id} value={d.id}>{d.name}</option>
+                              ))}
+                            </select>
                           </div>
                         </td>
                       );

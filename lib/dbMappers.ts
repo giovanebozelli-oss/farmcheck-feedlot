@@ -143,6 +143,7 @@ const feedRecordMap: Mapping = {
   lotId: 'lot_id',
   penId: 'pen_id',
   dietId: 'diet_id',
+  dietsPerTrato: 'diets_per_trato',
   headCount: 'head_count',
   daysOnFeed: 'days_on_feed',
   projectedWeight: 'projected_weight',

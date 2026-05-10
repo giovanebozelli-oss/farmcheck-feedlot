@@ -16,30 +16,43 @@ export const generateZootecnicoPDF = (data: any[], date: string) => {
   doc.setFontSize(10);
   doc.text(`Data de referência: ${date.split('-').reverse().join('/')}`, 14, 36);
   
+  // Helpers defensivos contra null/undefined/NaN
+  const num = (v: any, decimals = 2) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? n.toFixed(decimals) : '0.00';
+  };
+  const fmt = (v: any) => {
+    const n = Number(v);
+    return Number.isFinite(n)
+      ? n.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+      : '0,0';
+  };
+  const safeStr = (v: any) => (v === null || v === undefined ? '-' : String(v));
+
   const tableData = data.map(row => [
-    row.lotName.toUpperCase(),
-    row.penName,
-    row.category,
+    safeStr(row.lotName).toUpperCase(),
+    safeStr(row.penName),
+    safeStr(row.category),
     row.diet || '-',
-    row.heads,
-    row.daysOnFeed,
-    row.entryWeight.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }),
-    row.projWeight.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }),
-    row.cms_ms_hoje.toFixed(2),
-    row.cms_ms_ontem.toFixed(2),
-    row.cms_ms_5d.toFixed(2),
-    row.cms_ms_period.toFixed(2),
-    row.cms_mn_hoje.toFixed(2),
-    row.cms_mn_ontem.toFixed(2),
-    row.cms_mn_5d.toFixed(2),
-    row.cms_mn_period.toFixed(2),
-    `${row.pv_hoje.toFixed(2)}%`,
-    `${row.pv_ontem.toFixed(2)}%`,
-    `${row.pv_5d.toFixed(2)}%`,
-    `${row.pv_period.toFixed(2)}%`,
-    `R$ ${row.cost_hoje.toFixed(2)}`,
-    `R$ ${row.cost_period.toFixed(2)}`,
-    row.lastScores
+    Number.isFinite(row.heads) ? row.heads : 0,
+    Number.isFinite(row.daysOnFeed) ? row.daysOnFeed : 0,
+    fmt(row.entryWeight),
+    fmt(row.projWeight),
+    num(row.cms_ms_hoje),
+    num(row.cms_ms_ontem),
+    num(row.cms_ms_5d),
+    num(row.cms_ms_period),
+    num(row.cms_mn_hoje),
+    num(row.cms_mn_ontem),
+    num(row.cms_mn_5d),
+    num(row.cms_mn_period),
+    `${num(row.pv_hoje)}%`,
+    `${num(row.pv_ontem)}%`,
+    `${num(row.pv_5d)}%`,
+    `${num(row.pv_period)}%`,
+    `R$ ${num(row.cost_hoje)}`,
+    `R$ ${num(row.cost_period)}`,
+    safeStr(row.lastScores)
   ]);
 
   autoTable(doc, {
@@ -208,4 +221,84 @@ export const generateFichaTratoPDF = (entries: any[], date: string, treatmentPro
   doc.text('Escore de cocho referente ao DIA: 0 (limpo) | 0,5 (fundo) | 1 (<5%) | 1,5 | 2 (5-25%) | 3 (>25%) | 4 (cheio)', 14, finalY + 13);
 
   doc.save(`ficha-trato-${date}.pdf`);
+};
+
+// ============================================================
+// Relatório de Insumos (PDF)
+// ============================================================
+interface InsumoUsageRow {
+  id: string;
+  name: string;
+  totalQuantity: number;
+  totalCost: number;
+  pricePerTon: number;
+}
+
+export const generateInsumosPDF = (
+  data: InsumoUsageRow[],
+  startDate: string,
+  endDate: string,
+  lotName?: string
+) => {
+  const doc = new jsPDF('portrait');
+
+  doc.setFontSize(18);
+  doc.setTextColor(16, 185, 129);
+  doc.text('FarmCheck Feedlot', 14, 20);
+
+  doc.setFontSize(13);
+  doc.setTextColor(80);
+  doc.text('Consumo de Insumos', 14, 28);
+
+  doc.setFontSize(10);
+  doc.setTextColor(100);
+  const periodo = `${startDate.split('-').reverse().join('/')} a ${endDate.split('-').reverse().join('/')}`;
+  doc.text(`Período: ${periodo}`, 14, 35);
+
+  if (lotName) {
+    doc.setFontSize(11);
+    doc.setTextColor(15, 110, 86);
+    doc.text(`Lote: ${lotName}`, 14, 42);
+  }
+
+  const totalQty = data.reduce((acc, r) => acc + r.totalQuantity, 0);
+  const totalCost = data.reduce((acc, r) => acc + r.totalCost, 0);
+
+  const tableData = data.map((row) => [
+    row.name,
+    row.totalQuantity.toLocaleString('pt-BR', { maximumFractionDigits: 0 }) + ' kg',
+    (row.totalQuantity / 1000).toFixed(3) + ' Ton',
+    'R$ ' + row.pricePerTon.toLocaleString('pt-BR', { minimumFractionDigits: 2 }),
+    'R$ ' + row.totalCost.toLocaleString('pt-BR', { minimumFractionDigits: 2 }),
+  ]);
+
+  // Linha de totais
+  tableData.push([
+    'TOTAL',
+    totalQty.toLocaleString('pt-BR', { maximumFractionDigits: 0 }) + ' kg',
+    (totalQty / 1000).toFixed(3) + ' Ton',
+    '',
+    'R$ ' + totalCost.toLocaleString('pt-BR', { minimumFractionDigits: 2 }),
+  ]);
+
+  autoTable(doc, {
+    startY: lotName ? 47 : 40,
+    head: [['Ingrediente', 'Qtd. (kg MN)', 'Qtd. (Ton MN)', 'R$/Ton', 'Custo Total']],
+    body: tableData,
+    headStyles: { fillColor: [16, 185, 129], fontSize: 9 },
+    styles: { fontSize: 9, cellPadding: 3 },
+    didParseCell: (cellData) => {
+      // Última linha = total — destaca em negrito
+      if (cellData.section === 'body' && cellData.row.index === tableData.length - 1) {
+        cellData.cell.styles.fillColor = [240, 253, 244];
+        cellData.cell.styles.fontStyle = 'bold';
+        cellData.cell.styles.textColor = [15, 110, 86];
+      }
+    },
+  });
+
+  const filename = lotName
+    ? `consumo-insumos-${lotName.replace(/\s+/g, '-')}-${endDate}.pdf`
+    : `consumo-insumos-${startDate}-${endDate}.pdf`;
+  doc.save(filename);
 };
