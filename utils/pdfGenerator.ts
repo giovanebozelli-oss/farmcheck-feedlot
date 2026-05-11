@@ -302,3 +302,157 @@ export const generateInsumosPDF = (
     : `consumo-insumos-${startDate}-${endDate}.pdf`;
   doc.save(filename);
 };
+
+// ============================================================
+// Lançamentos — Histórico de Tratos (Fichas)
+// ============================================================
+export interface LancamentoTratoRow {
+  date: string;
+  lotName: string;
+  penName: string;
+  headCount: number;
+  dietName: string;
+  actualTotalMN: number;
+  mnPerHead: number;
+  msPerHead: number;
+  msPercentPV: number;
+  costPerHead: number;
+  totalCost: number;
+  bunkScore: number | string;
+  deviationPercent: number;
+}
+
+export const generateLancamentosTratosPDF = (data: LancamentoTratoRow[]) => {
+  const doc = new jsPDF('landscape');
+
+  doc.setFontSize(18);
+  doc.setTextColor(16, 185, 129);
+  doc.text('FarmCheck Feedlot', 14, 18);
+  doc.setFontSize(13);
+  doc.setTextColor(80);
+  doc.text('Lançamentos — Histórico de Tratos', 14, 26);
+  doc.setFontSize(9);
+  doc.setTextColor(120);
+  doc.text(`${data.length} registro(s) — gerado em ${new Date().toLocaleString('pt-BR')}`, 14, 32);
+
+  const num = (v: any, d = 2) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? n.toFixed(d) : '0.00';
+  };
+
+  const tableData = data.map((r) => [
+    r.date.split('-').reverse().join('/'),
+    r.lotName.toUpperCase(),
+    r.penName,
+    r.headCount,
+    r.dietName,
+    num(r.actualTotalMN, 0),
+    num(r.mnPerHead, 2),
+    num(r.msPerHead, 2),
+    `${num(r.msPercentPV, 2)}%`,
+    `R$ ${num(r.costPerHead, 2)}`,
+    `R$ ${num(r.totalCost, 2)}`,
+    String(r.bunkScore),
+    `${r.deviationPercent > 0 ? '+' : ''}${num(r.deviationPercent, 1)}%`,
+  ]);
+
+  // Totalizador
+  const totals = data.reduce(
+    (acc, r) => ({
+      headCount: acc.headCount + (r.headCount || 0),
+      actualTotalMN: acc.actualTotalMN + (r.actualTotalMN || 0),
+      totalCost: acc.totalCost + (r.totalCost || 0),
+    }),
+    { headCount: 0, actualTotalMN: 0, totalCost: 0 }
+  );
+  tableData.push([
+    'TOTAL',
+    '',
+    '',
+    String(totals.headCount),
+    '',
+    num(totals.actualTotalMN, 0),
+    '',
+    '',
+    '',
+    '',
+    `R$ ${num(totals.totalCost, 2)}`,
+    '',
+    '',
+  ]);
+
+  autoTable(doc, {
+    startY: 38,
+    margin: { left: 8, right: 8 },
+    head: [[
+      'Data', 'Lote', 'Baia', 'Cab', 'Dieta',
+      'MN Total', 'MN/cab', 'MS/cab', '%PV',
+      'Custo/cab', 'Custo Total', 'Cocho', 'Desvio',
+    ]],
+    body: tableData,
+    headStyles: { fillColor: [16, 185, 129], fontSize: 8, halign: 'center' },
+    bodyStyles: { fontSize: 7, cellPadding: 2 },
+    didParseCell: (cellData) => {
+      // Última linha (total) — destacar
+      if (cellData.section === 'body' && cellData.row.index === tableData.length - 1) {
+        cellData.cell.styles.fillColor = [240, 253, 244];
+        cellData.cell.styles.fontStyle = 'bold';
+        cellData.cell.styles.textColor = [15, 110, 86];
+      }
+    },
+  });
+
+  doc.save(`lancamentos-tratos-${new Date().toISOString().split('T')[0]}.pdf`);
+};
+
+// ============================================================
+// Lançamentos — Movimentação Animal
+// ============================================================
+export interface LancamentoMovimentoRow {
+  date: string;
+  lotName: string;
+  type: string;
+  quantity: number;
+  originPenName: string;
+  destinationPenName: string;
+  notes: string;
+}
+
+export const generateLancamentosMovimentosPDF = (data: LancamentoMovimentoRow[]) => {
+  const doc = new jsPDF('landscape');
+
+  doc.setFontSize(18);
+  doc.setTextColor(16, 185, 129);
+  doc.text('FarmCheck Feedlot', 14, 18);
+  doc.setFontSize(13);
+  doc.setTextColor(80);
+  doc.text('Lançamentos — Movimentação Animal', 14, 26);
+  doc.setFontSize(9);
+  doc.setTextColor(120);
+  doc.text(`${data.length} registro(s) — gerado em ${new Date().toLocaleString('pt-BR')}`, 14, 32);
+
+  const tableData = data.map((m) => [
+    m.date.split('-').reverse().join('/'),
+    m.lotName.toUpperCase(),
+    m.type,
+    String(m.quantity),
+    m.originPenName || '-',
+    m.destinationPenName || '-',
+    m.notes || '-',
+  ]);
+
+  autoTable(doc, {
+    startY: 38,
+    margin: { left: 8, right: 8 },
+    head: [['Data', 'Lote', 'Tipo', 'Qtd', 'Baia origem', 'Baia destino', 'Observações']],
+    body: tableData,
+    headStyles: { fillColor: [16, 185, 129], fontSize: 9 },
+    bodyStyles: { fontSize: 8, cellPadding: 2 },
+    columnStyles: {
+      6: { cellWidth: 80 },
+    },
+  });
+
+  doc.save(`lancamentos-movimentos-${new Date().toISOString().split('T')[0]}.pdf`);
+};
+

@@ -3,8 +3,8 @@ import React, { useState } from 'react';
 import { useAppStore } from '../context';
 import { calculateDaysOnFeed, calculateProjectedWeight, formatCurrency, calculateAllHeadCounts, sortLotsByPen } from '../utils';
 import { FileDown, FileText, Lock, Unlock, X, TrendingUp, ChevronRight, Trash2, Wheat, Edit2 } from 'lucide-react';
-import { generateZootecnicoPDF, generateInsumosPDF } from '../utils/pdfGenerator';
-import { generateZootecnicoExcel, generateInsumosExcel } from '../utils/excelGenerator';
+import { generateZootecnicoPDF, generateInsumosPDF, generateLancamentosTratosPDF, generateLancamentosMovimentosPDF } from '../utils/pdfGenerator';
+import { generateZootecnicoExcel, generateInsumosExcel, generateLancamentosTratosExcel, generateLancamentosMovimentosExcel } from '../utils/excelGenerator';
 import { MovementType, Lot, Pen, Diet, Ingredient, DailyFeedRecord } from '../types';
 import { useSessionState } from '../lib/useSessionState';
 import { 
@@ -101,6 +101,8 @@ const Reports: React.FC = () => {
   const [analysisDate, setAnalysisDate] = useSessionState<string>('reports.analysisDate', today);
   const [startDate, setStartDate] = useSessionState<string>('reports.startDate', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
   const [endDate, setEndDate] = useSessionState<string>('reports.endDate', today);
+  // Sub-aba dos Lançamentos (levantada pro Reports pra controle do export)
+  const [lancamentosSubTab, setLancamentosSubTab] = useSessionState<'tratos' | 'movimentos'>('reports.lancamentosSubTab', 'tratos');
   
   const headCounts = React.useMemo(() => {
     return calculateAllHeadCounts(lots, movements, analysisDate);
@@ -252,6 +254,62 @@ const Reports: React.FC = () => {
     [feedHistory, diets, ingredients, startDate, endDate, insumosLotFilter]
   );
 
+  // Constrói as linhas de Lançamentos (Histórico de Tratos) pra exportação
+  const buildLancamentosTratosRows = () => {
+    return [...feedHistory]
+      .sort((a, b) => b.date.localeCompare(a.date))
+      .map((r) => {
+        const lot = lots.find((l) => l.id === r.lotId);
+        const pen = pens.find((p) => p.id === (r.penId || lot?.currentPenId));
+        const diet = diets.find((d) => d.id === r.dietId);
+        const heads = r.headCount || 0;
+        const mnPerHead = heads > 0 ? (r.actualTotalMN || 0) / heads : 0;
+        const totalCost = (r.costPerHead || 0) * heads;
+        return {
+          date: r.date,
+          lotName: lot?.name || r.lotId,
+          penName: pen?.name || '-',
+          headCount: heads,
+          dietName: diet?.name || '-',
+          actualTotalMN: r.actualTotalMN || 0,
+          mnPerHead,
+          msPerHead: r.actualDryMatterPerHead || 0,
+          msPercentPV: r.actualDryMatterPercentPV || 0,
+          costPerHead: r.costPerHead || 0,
+          totalCost,
+          bunkScore: r.bunkScoreYesterday ?? '-',
+          deviationPercent: r.deviationPercent || 0,
+        };
+      });
+  };
+
+  // Constrói as linhas de Movimentações pra exportação
+  const buildLancamentosMovimentosRows = () => {
+    const typeLabels: Record<string, string> = {
+      ENTRADA: 'Entrada',
+      SAIDA: 'Saída (Abate)',
+      MORTE: 'Morte',
+      TRANSFERENCIA: 'Transferência',
+      REFUGO: 'Refugo',
+    };
+    return [...movements]
+      .sort((a, b) => b.date.localeCompare(a.date))
+      .map((m) => {
+        const lot = lots.find((l) => l.id === m.lotId);
+        const originPen = pens.find((p) => p.id === m.originPenId);
+        const destPen = pens.find((p) => p.id === m.destinationPenId);
+        return {
+          date: m.date,
+          lotName: lot?.name || m.lotId,
+          type: typeLabels[m.type] || m.type,
+          quantity: m.quantity,
+          originPenName: originPen?.name || '',
+          destinationPenName: destPen?.name || '',
+          notes: m.notes || '',
+        };
+      });
+  };
+
   const handleExportPDF = () => {
     setShowExportOptions(false);
     try {
@@ -281,8 +339,25 @@ const Reports: React.FC = () => {
         generateInsumosPDF(insumosUsageData, startDate, endDate, lotName);
       } else if (activeTab === 'fechamento') {
         alert('Use o botão de exportar dentro do card do lote para gerar o fechamento individual.');
+      } else if (activeTab === 'registros') {
+        // #Bug — exportar lançamentos (tratos ou movimentos)
+        if (lancamentosSubTab === 'tratos') {
+          const rows = buildLancamentosTratosRows();
+          if (rows.length === 0) {
+            alert('Nenhum lançamento de trato registrado ainda.');
+            return;
+          }
+          generateLancamentosTratosPDF(rows);
+        } else {
+          const rows = buildLancamentosMovimentosRows();
+          if (rows.length === 0) {
+            alert('Nenhuma movimentação registrada ainda.');
+            return;
+          }
+          generateLancamentosMovimentosPDF(rows);
+        }
       } else {
-        alert('Esta aba ainda não tem exportação. Use Acompanhamento Zootécnico ou Consumo de Insumos.');
+        alert('Esta aba ainda não tem exportação.');
       }
     } catch (err) {
       console.error('[handleExportPDF] Erro:', err);
@@ -320,8 +395,25 @@ const Reports: React.FC = () => {
         generateInsumosExcel(insumosUsageData, startDate, endDate, lotName);
       } else if (activeTab === 'fechamento') {
         alert('Use o botão de exportar dentro do card do lote para gerar o fechamento individual.');
+      } else if (activeTab === 'registros') {
+        // #Bug — exportar lançamentos (tratos ou movimentos) em Excel
+        if (lancamentosSubTab === 'tratos') {
+          const rows = buildLancamentosTratosRows();
+          if (rows.length === 0) {
+            alert('Nenhum lançamento de trato registrado ainda.');
+            return;
+          }
+          generateLancamentosTratosExcel(rows);
+        } else {
+          const rows = buildLancamentosMovimentosRows();
+          if (rows.length === 0) {
+            alert('Nenhuma movimentação registrada ainda.');
+            return;
+          }
+          generateLancamentosMovimentosExcel(rows);
+        }
       } else {
-        alert('Esta aba ainda não tem exportação. Use Acompanhamento Zootécnico ou Consumo de Insumos.');
+        alert('Esta aba ainda não tem exportação.');
       }
     } catch (err) {
       console.error('[handleExportExcel] Erro:', err);
@@ -535,7 +627,7 @@ const Reports: React.FC = () => {
               setLotFilter={setInsumosLotFilter}
             />
           ) : (
-            <RegistrosTab />
+            <RegistrosTab activeSubTab={lancamentosSubTab} setActiveSubTab={setLancamentosSubTab} />
           )}
         </div>
 
@@ -924,9 +1016,8 @@ const InsumosReport: React.FC<InsumosReportProps> = ({ startDate, endDate, usage
 
 export default Reports;
 
-const RegistrosTab: React.FC = () => {
+const RegistrosTab: React.FC<{ activeSubTab: 'tratos' | 'movimentos'; setActiveSubTab: (t: 'tratos' | 'movimentos') => void }> = ({ activeSubTab, setActiveSubTab }) => {
   const { feedHistory, movements, lots, diets, pens, config, deleteFeedRecord, deleteMovement, addFeedRecord } = useAppStore();
-  const [activeSubTab, setActiveSubTab] = useState<'tratos' | 'movimentos'>('tratos');
   const [editingRecord, setEditingRecord] = useState<DailyFeedRecord | null>(null);
 
   const sortedFeedHistory = [...feedHistory].sort((a,b) => b.date.localeCompare(a.date));

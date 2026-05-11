@@ -103,3 +103,113 @@ export const generateInsumosExcel = (
     : `consumo-insumos-${startDate}-${endDate}.xlsx`;
   XLSX.writeFile(wb, filename);
 };
+
+// ============================================================
+// Lançamentos — Excel
+// ============================================================
+export interface LancamentoTratoRowXLS {
+  date: string;
+  lotName: string;
+  penName: string;
+  headCount: number;
+  dietName: string;
+  actualTotalMN: number;
+  mnPerHead: number;
+  msPerHead: number;
+  msPercentPV: number;
+  costPerHead: number;
+  totalCost: number;
+  bunkScore: number | string;
+  deviationPercent: number;
+}
+
+export const generateLancamentosTratosExcel = (data: LancamentoTratoRowXLS[]) => {
+  const num = (v: any) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+
+  const worksheetData = data.map((r) => ({
+    'Data': r.date.split('-').reverse().join('/'),
+    'Lote': r.lotName,
+    'Baia': r.penName,
+    'Cabeças': num(r.headCount),
+    'Dieta': r.dietName,
+    'MN Total (kg)': num(r.actualTotalMN),
+    'MN/Cab (kg)': num(r.mnPerHead),
+    'MS/Cab (kg)': num(r.msPerHead),
+    '% PV': num(r.msPercentPV),
+    'Custo/Cab (R$)': num(r.costPerHead),
+    'Custo Total (R$)': num(r.totalCost),
+    'Escore Cocho': r.bunkScore,
+    'Desvio %': num(r.deviationPercent),
+  }));
+
+  // Total
+  const totals = data.reduce(
+    (acc, r) => ({
+      headCount: acc.headCount + (r.headCount || 0),
+      actualTotalMN: acc.actualTotalMN + (r.actualTotalMN || 0),
+      totalCost: acc.totalCost + (r.totalCost || 0),
+    }),
+    { headCount: 0, actualTotalMN: 0, totalCost: 0 }
+  );
+  worksheetData.push({
+    'Data': 'TOTAL',
+    'Lote': '',
+    'Baia': '',
+    'Cabeças': totals.headCount,
+    'Dieta': '',
+    'MN Total (kg)': Number(totals.actualTotalMN.toFixed(2)),
+    'MN/Cab (kg)': 0,
+    'MS/Cab (kg)': 0,
+    '% PV': 0,
+    'Custo/Cab (R$)': 0,
+    'Custo Total (R$)': Number(totals.totalCost.toFixed(2)),
+    'Escore Cocho': '',
+    'Desvio %': 0,
+  });
+
+  const ws = XLSX.utils.json_to_sheet(worksheetData);
+  ws['!cols'] = [
+    { wch: 12 }, { wch: 16 }, { wch: 14 }, { wch: 9 }, { wch: 20 },
+    { wch: 13 }, { wch: 12 }, { wch: 12 }, { wch: 8 },
+    { wch: 13 }, { wch: 14 }, { wch: 12 }, { wch: 10 },
+  ];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Tratos');
+
+  XLSX.writeFile(wb, `lancamentos-tratos-${new Date().toISOString().split('T')[0]}.xlsx`);
+};
+
+export interface LancamentoMovimentoRowXLS {
+  date: string;
+  lotName: string;
+  type: string;
+  quantity: number;
+  originPenName: string;
+  destinationPenName: string;
+  notes: string;
+}
+
+export const generateLancamentosMovimentosExcel = (data: LancamentoMovimentoRowXLS[]) => {
+  const worksheetData = data.map((m) => ({
+    'Data': m.date.split('-').reverse().join('/'),
+    'Lote': m.lotName,
+    'Tipo': m.type,
+    'Quantidade': m.quantity,
+    'Baia Origem': m.originPenName || '-',
+    'Baia Destino': m.destinationPenName || '-',
+    'Observações': m.notes || '-',
+  }));
+
+  const ws = XLSX.utils.json_to_sheet(worksheetData);
+  ws['!cols'] = [
+    { wch: 12 }, { wch: 16 }, { wch: 16 }, { wch: 12 },
+    { wch: 14 }, { wch: 14 }, { wch: 40 },
+  ];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Movimentação');
+
+  XLSX.writeFile(wb, `lancamentos-movimentos-${new Date().toISOString().split('T')[0]}.xlsx`);
+};
+
