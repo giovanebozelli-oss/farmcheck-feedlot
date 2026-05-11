@@ -41,10 +41,89 @@ interface SheetEntry {
   isSaving?: boolean;
 }
 
+// ======================================================================
+// PERSISTÊNCIA DE RASCUNHOS — localStorage (não-salvos persistem entre sessões)
+// ======================================================================
+interface DraftEntry {
+  drops?: number[];
+  bunkScore?: BunkScore;
+  dietsPerTrato?: string[];
+  dietId?: string;
+}
+type DraftsByLot = Record<string, DraftEntry>;
+
+const draftsKey = (date: string) => `fc.feedsheet.drafts.${date}`;
+
+const loadDrafts = (date: string): DraftsByLot => {
+  try {
+    const raw = localStorage.getItem(draftsKey(date));
+    if (!raw) return {};
+    return JSON.parse(raw) || {};
+  } catch {
+    return {};
+  }
+};
+
+const saveDrafts = (date: string, drafts: DraftsByLot) => {
+  try {
+    if (Object.keys(drafts).length === 0) {
+      localStorage.removeItem(draftsKey(date));
+    } else {
+      localStorage.setItem(draftsKey(date), JSON.stringify(drafts));
+    }
+  } catch {
+    // localStorage cheio ou bloqueado — ignora silenciosamente
+  }
+};
+
+const removeDraftForLot = (date: string, lotId: string) => {
+  try {
+    const raw = localStorage.getItem(draftsKey(date));
+    if (!raw) return;
+    const drafts: DraftsByLot = JSON.parse(raw) || {};
+    delete drafts[lotId];
+    if (Object.keys(drafts).length === 0) {
+      localStorage.removeItem(draftsKey(date));
+    } else {
+      localStorage.setItem(draftsKey(date), JSON.stringify(drafts));
+    }
+  } catch {
+    // ignora
+  }
+};
+
+/**
+ * Limpa rascunhos de datas antigas (> 30 dias) pra não inflar o storage.
+ * Roda no mount do componente.
+ */
+const cleanOldDrafts = () => {
+  try {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 30);
+    const cutoffStr = cutoff.toISOString().split('T')[0];
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith('fc.feedsheet.drafts.')) {
+        const date = key.replace('fc.feedsheet.drafts.', '');
+        if (date < cutoffStr) keysToRemove.push(key);
+      }
+    }
+    keysToRemove.forEach((k) => localStorage.removeItem(k));
+  } catch {
+    // ignora
+  }
+};
+
 const FeedSheet: React.FC = () => {
   const { lots, pens, diets, config, feedHistory, getActiveHeadCount, addFeedRecord, movements, updateLot } = useAppStore();
   const [selectedDate, setSelectedDate] = useSessionState<string>('feedsheet.date', new Date().toISOString().split('T')[0]);
   const [entries, setEntries] = useState<SheetEntry[]>([]);
+
+  // Limpa rascunhos antigos (>30 dias) no mount inicial
+  useEffect(() => {
+    cleanOldDrafts();
+  }, []);
   
   const headCounts = useMemo(() => {
     return calculateAllHeadCounts(lots, movements, selectedDate);
@@ -60,6 +139,9 @@ const FeedSheet: React.FC = () => {
       }),
       pens
     );
+
+    // Carrega rascunhos do localStorage (dados digitados mas não salvos)
+    const drafts = loadDrafts(selectedDate);
 
     const newEntries: SheetEntry[] = activeLots.map(lot => {
       const pen = pens.find(p => p.id === lot.currentPenId);
@@ -92,7 +174,7 @@ const FeedSheet: React.FC = () => {
       const numTratos = config.numTreatments || 4;
 
       if (existingRecord) {
-        // Carrega dietsPerTrato do registro salvo (ou inicializa todos = dieta atual se ausente)
+        // Já tem registro salvo no banco — sempre usa o salvo (e remove draft se houver)
         const savedDiets = (existingRecord as any).dietsPerTrato as string[] | undefined;
         const dietsPerTrato =
           savedDiets && savedDiets.length === numTratos
@@ -104,7 +186,7 @@ const FeedSheet: React.FC = () => {
           penName: pen?.name || '?',
           headCount: existingRecord.headCount, // Use snapshot from record
           dietName: diet?.name || '?',
-          dietId: diet?.id || '',
+          dietId: existingRecord.dietId || diet?.id || '',
           dietMS: diet?.calculatedDryMatter || 0,
           dietCost: diet?.calculatedCostPerKg || 0,
           dietsPerTrato,
@@ -114,6 +196,32 @@ const FeedSheet: React.FC = () => {
           daysOnFeed,
           projectedWeight,
           isSaved: true,
+          isSaving: false
+        };
+      }
+
+      // Sem registro salvo: tenta hidratar do draft (não-salvo)
+      const draft = drafts[lot.id];
+      if (draft) {
+        return {
+          lotId: lot.id,
+          penName: pen?.name || '?',
+          headCount: heads,
+          dietName: diet?.name || '?',
+          dietId: draft.dietId || diet?.id || '',
+          dietMS: diet?.calculatedDryMatter || 60,
+          dietCost: diet?.calculatedCostPerKg || 0,
+          dietsPerTrato: (draft.dietsPerTrato && draft.dietsPerTrato.length === numTratos)
+            ? draft.dietsPerTrato
+            : Array(numTratos).fill(diet?.id || ''),
+          prevConsumptionMS: prevConsMS,
+          bunkScore: (draft.bunkScore ?? BunkScore.Zero) as BunkScore,
+          drops: (draft.drops && draft.drops.length === numTratos)
+            ? draft.drops
+            : Array(numTratos).fill(0),
+          daysOnFeed,
+          projectedWeight,
+          isSaved: false,
           isSaving: false
         };
       }
@@ -139,6 +247,32 @@ const FeedSheet: React.FC = () => {
 
     setEntries(newEntries);
   }, [selectedDate, lots, pens, diets, feedHistory, config, headCounts]); // Inclui headCounts para reatividade a movements
+
+  // ======================================================================
+  // PERSISTÊNCIA DE RASCUNHOS (localStorage) — não perde valores digitados
+  // ======================================================================
+  // A cada mudança nos entries, sincroniza drafts (apenas entries NÃO salvos
+  // que têm algo digitado de diferente do padrão).
+  useEffect(() => {
+    if (entries.length === 0) return;
+    const drafts: DraftsByLot = {};
+    entries.forEach((e) => {
+      if (e.isSaved) return; // ignora os salvos
+      const hasInput =
+        (e.drops || []).some((d) => (d || 0) > 0) ||
+        e.bunkScore !== BunkScore.Zero ||
+        (e.dietsPerTrato || []).some((d) => d !== e.dietId);
+      if (hasInput) {
+        drafts[e.lotId] = {
+          drops: e.drops,
+          bunkScore: e.bunkScore,
+          dietsPerTrato: e.dietsPerTrato,
+          dietId: e.dietId,
+        };
+      }
+    });
+    saveDrafts(selectedDate, drafts);
+  }, [entries, selectedDate]);
 
   /**
    * Cálculo MN considerando step intra-dia.
@@ -517,7 +651,10 @@ const FeedSheet: React.FC = () => {
       });
       return;
     }
-    
+
+    // Salvo com sucesso → remove o rascunho daquele lote do localStorage
+    removeDraftForLot(selectedDate, finalEntry.lotId);
+
     setEntries(prev => {
       const n = [...prev];
       n[index] = { ...n[index], isSaved: true, isSaving: false };
