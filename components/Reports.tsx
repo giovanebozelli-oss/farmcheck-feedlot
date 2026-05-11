@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { useAppStore } from '../context';
 import { calculateDaysOnFeed, calculateProjectedWeight, formatCurrency, calculateAllHeadCounts, sortLotsByPen } from '../utils';
-import { FileDown, FileText, Lock, Unlock, X, TrendingUp, ChevronRight, Trash2, Wheat } from 'lucide-react';
+import { FileDown, FileText, Lock, Unlock, X, TrendingUp, ChevronRight, Trash2, Wheat, Edit2 } from 'lucide-react';
 import { generateZootecnicoPDF, generateInsumosPDF } from '../utils/pdfGenerator';
 import { generateZootecnicoExcel, generateInsumosExcel } from '../utils/excelGenerator';
 import { MovementType, Lot, Pen, Diet, Ingredient, DailyFeedRecord } from '../types';
@@ -925,8 +925,9 @@ const InsumosReport: React.FC<InsumosReportProps> = ({ startDate, endDate, usage
 export default Reports;
 
 const RegistrosTab: React.FC = () => {
-  const { feedHistory, movements, lots, deleteFeedRecord, deleteMovement } = useAppStore();
+  const { feedHistory, movements, lots, diets, pens, config, deleteFeedRecord, deleteMovement, addFeedRecord } = useAppStore();
   const [activeSubTab, setActiveSubTab] = useState<'tratos' | 'movimentos'>('tratos');
+  const [editingRecord, setEditingRecord] = useState<DailyFeedRecord | null>(null);
 
   const sortedFeedHistory = [...feedHistory].sort((a,b) => b.date.localeCompare(a.date));
   const sortedMovements = [...movements].sort((a,b) => b.date.localeCompare(a.date));
@@ -971,16 +972,25 @@ const RegistrosTab: React.FC = () => {
                            <td className="px-6 py-4 text-center font-mono">{record.actualTotalMN.toFixed(0)}</td>
                            <td className="px-6 py-4 text-center font-bold text-emerald-600">{record.actualDryMatterPerHead.toFixed(2)}</td>
                            <td className="px-6 py-4 text-right">
-                              <button 
-                                onClick={() => {
-                                  if (window.confirm('Excluir este registro de trato permanentemente?')) {
-                                    deleteFeedRecord(record.id);
-                                  }
-                                }}
-                                className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                              <div className="flex justify-end items-center gap-1">
+                                <button
+                                  onClick={() => setEditingRecord(record)}
+                                  className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all"
+                                  title="Editar registro"
+                                >
+                                  <Edit2 size={16} />
+                                </button>
+                                <button 
+                                  onClick={() => {
+                                    if (window.confirm('Excluir este registro de trato permanentemente?')) {
+                                      deleteFeedRecord(record.id);
+                                    }
+                                  }}
+                                  className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all opacity-0 group-hover:opacity-100"
                               >
                                 <Trash2 size={16} />
                               </button>
+                              </div>
                            </td>
                         </tr>
                        );
@@ -1043,6 +1053,170 @@ const RegistrosTab: React.FC = () => {
             </div>
          </div>
        )}
+
+       {/* Modal de Edição de Lançamento */}
+       {editingRecord && (
+         <EditFeedRecordModal
+           record={editingRecord}
+           diets={diets}
+           config={config}
+           onClose={() => setEditingRecord(null)}
+           onSave={async (updated) => {
+             try {
+               await addFeedRecord(updated); // upsert pelo id
+               setEditingRecord(null);
+             } catch (err) {
+               console.error('[edit feed]', err);
+               alert('Erro ao salvar edição.');
+             }
+           }}
+         />
+       )}
+    </div>
+  );
+};
+
+// =====================================================================
+// Modal de edição de lançamento (Ficha de Trato retroativa)
+// =====================================================================
+interface EditFeedRecordModalProps {
+  record: DailyFeedRecord;
+  diets: Diet[];
+  config: any;
+  onClose: () => void;
+  onSave: (updated: DailyFeedRecord) => void;
+}
+
+const EditFeedRecordModal: React.FC<EditFeedRecordModalProps> = ({ record, diets, config, onClose, onSave }) => {
+  const [actualTotalMN, setActualTotalMN] = useState<number>(record.actualTotalMN || 0);
+  const [dietId, setDietId] = useState<string>(record.dietId);
+  const [bunkScore, setBunkScore] = useState<number>(record.bunkScoreYesterday || 0);
+
+  const selectedDiet = diets.find(d => d.id === dietId);
+  const msPercent = selectedDiet?.calculatedDryMatter || 60;
+  const costPerKg = selectedDiet?.calculatedCostPerKg || 0;
+
+  // Recalcula tudo baseado nos novos valores
+  const recalc = () => {
+    const newActualMN = actualTotalMN || 0;
+    const msTotalReal = newActualMN * (msPercent / 100);
+    const headCount = record.headCount || 0;
+    const actualMSPerHead = headCount > 0 ? msTotalReal / headCount : 0;
+    const projWeight = record.projectedWeight || 0;
+    const actualMSPercentPV = projWeight > 0 ? (actualMSPerHead / projWeight) * 100 : 0;
+    const costPerHead = headCount > 0 ? (newActualMN * costPerKg) / headCount : 0;
+    const deviation = record.predictedTotalMN > 0
+      ? ((newActualMN - record.predictedTotalMN) / record.predictedTotalMN) * 100
+      : 0;
+    return { actualMSPerHead, actualMSPercentPV, costPerHead, deviation };
+  };
+
+  const computed = recalc();
+
+  return (
+    <div className="fixed inset-0 bg-slate-900/70 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-start justify-between mb-4">
+          <div>
+            <h3 className="text-lg font-black uppercase tracking-tight text-slate-900">
+              Editar Lançamento
+            </h3>
+            <p className="text-xs text-slate-500 mt-1">
+              {record.date.split('-').reverse().join('/')} · Lote {record.lotId.toUpperCase()} · {record.headCount} cab
+            </p>
+          </div>
+          <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-700">
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Consumo total (kg MN)</label>
+            <input
+              type="number"
+              value={actualTotalMN || ''}
+              onChange={(e) => setActualTotalMN(Number(e.target.value) || 0)}
+              className="w-full px-3 py-2 border-2 border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none font-mono text-lg"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Dieta</label>
+            <select
+              value={dietId}
+              onChange={(e) => setDietId(e.target.value)}
+              className="w-full px-3 py-2 border-2 border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none"
+            >
+              {diets.map(d => (
+                <option key={d.id} value={d.id}>{d.name} ({d.calculatedDryMatter?.toFixed(1)}% MS, R$ {d.calculatedCostPerKg?.toFixed(2)}/kg)</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Escore de cocho (ontem)</label>
+            <select
+              value={bunkScore}
+              onChange={(e) => setBunkScore(Number(e.target.value))}
+              className="w-full px-3 py-2 border-2 border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none"
+            >
+              {[0, 0.5, 1, 1.5, 2, 3, 4].map(s => (
+                <option key={s} value={s}>Escore {s}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Preview dos cálculos */}
+          <div className="bg-slate-50 rounded-lg p-3 grid grid-cols-2 gap-2 text-xs">
+            <div>
+              <div className="text-slate-400 uppercase font-bold">MS/cab</div>
+              <div className="font-mono font-bold text-slate-800">{computed.actualMSPerHead.toFixed(2)} kg</div>
+            </div>
+            <div>
+              <div className="text-slate-400 uppercase font-bold">% PV</div>
+              <div className="font-mono font-bold text-slate-800">{computed.actualMSPercentPV.toFixed(2)}%</div>
+            </div>
+            <div>
+              <div className="text-slate-400 uppercase font-bold">Custo/cab</div>
+              <div className="font-mono font-bold text-emerald-700">R$ {computed.costPerHead.toFixed(2)}</div>
+            </div>
+            <div>
+              <div className="text-slate-400 uppercase font-bold">Desvio</div>
+              <div className={`font-mono font-bold ${Math.abs(computed.deviation) > 5 ? 'text-red-600' : 'text-emerald-700'}`}>
+                {computed.deviation > 0 ? '+' : ''}{computed.deviation.toFixed(1)}%
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex gap-2 mt-6">
+          <button
+            onClick={onClose}
+            className="flex-1 px-4 py-2 rounded-lg border-2 border-slate-200 text-slate-600 font-bold hover:bg-slate-50"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={() => {
+              const updated: DailyFeedRecord = {
+                ...record,
+                actualTotalMN,
+                dietId,
+                bunkScoreYesterday: bunkScore as any,
+                actualDryMatterPerHead: computed.actualMSPerHead,
+                actualDryMatterPercentPV: computed.actualMSPercentPV,
+                costPerHead: computed.costPerHead,
+                deviationPercent: computed.deviation,
+              };
+              onSave(updated);
+            }}
+            className="flex-1 px-4 py-2 rounded-lg bg-emerald-600 text-white font-bold hover:bg-emerald-700"
+          >
+            Salvar Edição
+          </button>
+        </div>
+      </div>
     </div>
   );
 };

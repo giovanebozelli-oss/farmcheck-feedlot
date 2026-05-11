@@ -531,10 +531,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       .from('fc_feed_records')
       .upsert(feedRecordToDb(finalizedRecord), { onConflict: 'id' });
     if (error) throw error;
+    // Optimistic local update — garante reatividade mesmo se realtime atrasar
+    setFeedHistory(prev => {
+      const idx = prev.findIndex(r => r.id === finalizedRecord.id);
+      if (idx >= 0) {
+        const n = [...prev];
+        n[idx] = finalizedRecord;
+        return n;
+      }
+      return [finalizedRecord, ...prev];
+    });
   };
   const deleteFeedRecord = async (id: string) => {
     const { error } = await supabase.from('fc_feed_records').delete().eq('id', id);
     if (error) throw error;
+    // Optimistic local update — caso o realtime DELETE não chegue rápido
+    setFeedHistory(prev => prev.filter(r => r.id !== id));
   };
 
   // ----- GMD Curves (within config) -----

@@ -12,7 +12,7 @@ import {
   calculateAllHeadCounts,
   sortLotsByPen
 } from '../utils';
-import { Calendar, Save, AlertCircle, CheckCircle, Calculator, Info, FileDown, Loader2 } from 'lucide-react';
+import { Calendar, Save, AlertCircle, CheckCircle, Calculator, Info, FileDown, Loader2, Copy } from 'lucide-react';
 import { generateFichaTratoPDF } from '../utils/pdfGenerator';
 import { useSessionState } from '../lib/useSessionState';
 
@@ -167,6 +167,78 @@ const FeedSheet: React.FC = () => {
     return { dropPredictions, totalMN };
   };
 
+  /**
+   * Cálculo dinâmico considerando o que JÁ FOI digitado em "realizado":
+   * - Tratos com realizado > 0 são fixos (não recalcula previsão)
+   * - Tratos do meio (não-digitados) mantém proporção fixa, MAS recalculam MN baseado na MS da dieta atual
+   * - ÚLTIMO trato (se não digitado) absorve toda a sobra/falta de MS pra atingir msTotalKg
+   *
+   * Retorna previsões PARA EXIBIR (informativo) — o realizado digitado tem precedência.
+   */
+  const calculateLivePredictions = (
+    msTotalKg: number,
+    tratoProportions: number[],
+    dietsPerTrato: string[],
+    realizedDrops: number[],
+    dietsList: typeof diets,
+    fallbackMSPercent: number
+  ): { dropPredictions: number[]; totalMN: number; lastTratoSuggestion: number } => {
+    const numTratos = tratoProportions.length;
+    const lastIdx = numTratos - 1;
+
+    // 1. MS já consumido pelos tratos digitados (qualquer posição)
+    let msConsumed = 0;
+    for (let i = 0; i < numTratos; i++) {
+      const drop = realizedDrops[i] || 0;
+      if (drop > 0) {
+        const diet = dietsList.find(d => d.id === dietsPerTrato[i]);
+        const msPct = diet?.calculatedDryMatter || fallbackMSPercent;
+        msConsumed += drop * (msPct / 100);
+      }
+    }
+
+    // 2. MS planejada pros tratos do MEIO (não-último, não-digitado)
+    let msPlannedMid = 0;
+    for (let i = 0; i < numTratos; i++) {
+      if (i === lastIdx) continue;
+      const drop = realizedDrops[i] || 0;
+      if (drop === 0) {
+        // ainda não digitado — vai planejado pela proporção
+        msPlannedMid += msTotalKg * (tratoProportions[i] / 100);
+      }
+    }
+
+    // 3. MS pro último trato = sobra
+    let msLast = msTotalKg - msConsumed - msPlannedMid;
+    if (msLast < 0) msLast = 0; // se já fornecido mais que o alvo, último vai zero
+
+    // 4. Monta o array de previsões
+    const dropPredictions: number[] = tratoProportions.map((prop, i) => {
+      const drop = realizedDrops[i] || 0;
+      if (drop > 0) {
+        // Já digitado — predição = o próprio realizado (não mostra nada novo)
+        return drop;
+      }
+      const diet = dietsList.find(d => d.id === dietsPerTrato[i]);
+      const msPct = diet?.calculatedDryMatter || fallbackMSPercent;
+
+      if (i === lastIdx) {
+        // Último trato absorve a sobra
+        return Math.max(0, Math.round(msLast / (msPct / 100)));
+      }
+      // Trato do meio: proporção fixa
+      const msTrato = msTotalKg * (prop / 100);
+      return Math.round(msTrato / (msPct / 100));
+    });
+
+    const totalMN = dropPredictions.reduce((a, b) => a + b, 0);
+    const lastDiet = dietsList.find(d => d.id === dietsPerTrato[lastIdx]);
+    const lastMS = lastDiet?.calculatedDryMatter || fallbackMSPercent;
+    const lastTratoSuggestion = Math.max(0, Math.round(msLast / (lastMS / 100)));
+
+    return { dropPredictions, totalMN, lastTratoSuggestion };
+  };
+
   /** Soma o custo R$/cabeça considerando step intra-dia */
   const calculateCostWithStep = (
     actualDrops: number[],
@@ -216,6 +288,59 @@ const FeedSheet: React.FC = () => {
     });
   };
 
+  /**
+   * #5 / #6 — Replicar dados (escore + dieta principal + step intra-dia) de outra data
+   * para todos os lotes ou apenas um.
+   * NÃO replica os "drops" (realizado) — esses ficam zerados pro tratador preencher.
+   */
+  const replicateFromDate = (sourceDate: string, targetIndex?: number) => {
+    setEntries(prev => {
+      return prev.map((entry, idx) => {
+        // Se foi pedido apenas um lote específico, ignora os outros
+        if (targetIndex !== undefined && idx !== targetIndex) return entry;
+
+        // Acha o último registro do lote naquela data
+        const sourceRecord = feedHistory.find(
+          r => r.date === sourceDate && r.lotId === entry.lotId
+        );
+        if (!sourceRecord) return entry; // sem dados pra replicar nesse lote
+
+        const numTratos = entry.dietsPerTrato.length;
+        const sourceDiets = (sourceRecord as any).dietsPerTrato as string[] | undefined;
+        const newDietsPerTrato =
+          sourceDiets && sourceDiets.length === numTratos
+            ? [...sourceDiets]
+            : Array(numTratos).fill(sourceRecord.dietId);
+
+        return {
+          ...entry,
+          bunkScore: sourceRecord.bunkScoreYesterday,
+          dietId: sourceRecord.dietId,
+          dietsPerTrato: newDietsPerTrato,
+          isSaved: false, // marca como não salvo (precisa salvar de novo na data atual)
+        };
+      });
+    });
+  };
+
+  // Modal de replicação (geral ou individual)
+  const [showReplicateModal, setShowReplicateModal] = useState<{ open: boolean; targetIndex?: number }>({ open: false });
+  const [replicateSourceDate, setReplicateSourceDate] = useState<string>(() => {
+    // Default: dia anterior à data selecionada
+    const d = new Date(selectedDate);
+    d.setDate(d.getDate() - 1);
+    return d.toISOString().split('T')[0];
+  });
+
+  const handleConfirmReplicate = () => {
+    if (!replicateSourceDate || replicateSourceDate >= selectedDate) {
+      alert('Escolha uma data ANTERIOR à data atual de lançamento.');
+      return;
+    }
+    replicateFromDate(replicateSourceDate, showReplicateModal.targetIndex);
+    setShowReplicateModal({ open: false });
+  };
+
   const handleDietChange = async (index: number, dietId: string) => {
     const entry = entries[index];
     const diet = diets.find(d => d.id === dietId);
@@ -243,6 +368,47 @@ const FeedSheet: React.FC = () => {
   };
 
   const handleSave = async (index: number) => {
+    const entry = entries[index];
+    const lastIdx = entry.drops.length - 1;
+    const anyPrevFilled = entry.drops.slice(0, lastIdx).some(d => (d || 0) > 0);
+    const lastEmpty = (entry.drops[lastIdx] || 0) === 0;
+
+    // Se o último trato está vazio mas houver tratos anteriores preenchidos,
+    // mostra a sugestão pra confirmação (#1b)
+    if (anyPrevFilled && lastEmpty) {
+      const adj = getAdjustmentForScore(entry.bunkScore, config.bunkScoreAdjustments || []);
+      const msAlvoTotal = (entry.prevConsumptionMS * (1 + (adj / 100))) * entry.headCount;
+      const livePred = calculateLivePredictions(
+        msAlvoTotal,
+        config.treatmentProportions || [25, 25, 25, 25],
+        entry.dietsPerTrato,
+        entry.drops,
+        diets,
+        entry.dietMS
+      );
+      const suggestion = livePred.lastTratoSuggestion;
+
+      const confirmed = window.confirm(
+        `O Trato ${lastIdx + 1} está vazio. Deseja usar a sugestão de ${suggestion.toLocaleString()} kg ` +
+        `(valor calculado pra atingir a meta de MS do dia)?\n\n` +
+        `OK = usar ${suggestion.toLocaleString()} kg como realizado\n` +
+        `Cancelar = salvar com 0 (trato não fornecido)`
+      );
+
+      if (confirmed) {
+        // Aplica a sugestão no estado
+        const newDrops = [...entry.drops];
+        newDrops[lastIdx] = suggestion;
+        setEntries(prev => {
+          const n = [...prev];
+          n[index] = { ...n[index], drops: newDrops };
+          return n;
+        });
+        // Espera o estado propagar antes de salvar
+        await new Promise(r => setTimeout(r, 50));
+      }
+    }
+
     setEntries(prev => {
       const n = [...prev];
       n[index] = { ...n[index], isSaving: true };
@@ -250,35 +416,37 @@ const FeedSheet: React.FC = () => {
     });
 
     // Simulate saving process for UX feedback
-    await new Promise(resolve => setTimeout(resolve, 600));
+    await new Promise(resolve => setTimeout(resolve, 300));
 
-    const entry = entries[index];
+    // Recarrega o entry depois de eventual aplicação da sugestão
+    const refreshedEntry = entries[index];
+    const finalEntry = refreshedEntry; // o setState async pode não ter propagado, mas usamos drops via state mais atualizado
 
     // Recalcula com step intra-dia
-    const adjustment = getAdjustmentForScore(entry.bunkScore, config.bunkScoreAdjustments || []);
-    const predictedMSPerHead = entry.prevConsumptionMS * (1 + (adjustment / 100));
-    const msTotalKg = predictedMSPerHead * entry.headCount; // kg MS total previsto pra hoje
+    const adjustment = getAdjustmentForScore(finalEntry.bunkScore, config.bunkScoreAdjustments || []);
+    const predictedMSPerHead = finalEntry.prevConsumptionMS * (1 + (adjustment / 100));
+    const msTotalKg = predictedMSPerHead * finalEntry.headCount; // kg MS total previsto pra hoje
 
     // Detecta se está em "modo step" (algum trato com dieta diferente da principal)
-    const isStepMode = entry.dietsPerTrato.some(d => d !== entry.dietId);
+    const isStepMode = finalEntry.dietsPerTrato.some(d => d !== finalEntry.dietId);
 
     let predictedTotalMN: number;
     if (isStepMode) {
       const result = calculateMNWithStep(
         msTotalKg,
         config.treatmentProportions || [25, 25, 25, 25],
-        entry.dietsPerTrato,
+        finalEntry.dietsPerTrato,
         diets,
-        entry.dietMS
+        finalEntry.dietMS
       );
       predictedTotalMN = result.totalMN;
     } else {
       // Modo tradicional: 1 dieta o dia inteiro
-      const predictedMNPerHead = predictedMSPerHead / (entry.dietMS / 100);
-      predictedTotalMN = Math.round(predictedMNPerHead * entry.headCount);
+      const predictedMNPerHead = predictedMSPerHead / (finalEntry.dietMS / 100);
+      predictedTotalMN = Math.round(predictedMNPerHead * finalEntry.headCount);
     }
 
-    const actualTotalMN = entry.drops.reduce((a, b) => a + b, 0);
+    const actualTotalMN = finalEntry.drops.reduce((a, b) => a + b, 0);
     const deviation = calculateDeviation(actualTotalMN, predictedTotalMN);
 
     // Métricas: se step ativo, calcula custo por trato; senão usa metric padrão
@@ -288,28 +456,28 @@ const FeedSheet: React.FC = () => {
 
     if (isStepMode) {
       costPerHead = calculateCostWithStep(
-        entry.drops,
-        entry.dietsPerTrato,
+        finalEntry.drops,
+        finalEntry.dietsPerTrato,
         diets,
-        entry.headCount,
-        entry.dietCost
+        finalEntry.headCount,
+        finalEntry.dietCost
       );
       // MS real: soma de (drop * MS%/100) por trato
       let msTotalReal = 0;
-      for (let i = 0; i < entry.drops.length; i++) {
-        const dietForTrato = diets.find(d => d.id === entry.dietsPerTrato[i]);
-        const msPercent = dietForTrato?.calculatedDryMatter || entry.dietMS;
-        msTotalReal += (entry.drops[i] || 0) * (msPercent / 100);
+      for (let i = 0; i < finalEntry.drops.length; i++) {
+        const dietForTrato = diets.find(d => d.id === finalEntry.dietsPerTrato[i]);
+        const msPercent = dietForTrato?.calculatedDryMatter || finalEntry.dietMS;
+        msTotalReal += (finalEntry.drops[i] || 0) * (msPercent / 100);
       }
-      actualMSPerHead = entry.headCount > 0 ? msTotalReal / entry.headCount : 0;
-      actualMSPercentPV = entry.projectedWeight > 0 ? (actualMSPerHead / entry.projectedWeight) * 100 : 0;
+      actualMSPerHead = finalEntry.headCount > 0 ? msTotalReal / finalEntry.headCount : 0;
+      actualMSPercentPV = finalEntry.projectedWeight > 0 ? (actualMSPerHead / finalEntry.projectedWeight) * 100 : 0;
     } else {
       const metrics = calculateConsumptionMetrics(
         actualTotalMN,
-        entry.headCount,
-        entry.dietMS,
-        entry.projectedWeight,
-        entry.dietCost
+        finalEntry.headCount,
+        finalEntry.dietMS,
+        finalEntry.projectedWeight,
+        finalEntry.dietCost
       );
       costPerHead = metrics.costPerHead;
       actualMSPerHead = metrics.msPerHead;
@@ -317,20 +485,20 @@ const FeedSheet: React.FC = () => {
     }
 
     const record: DailyFeedRecord = {
-      id: `${selectedDate}_${entry.lotId}`,
+      id: `${selectedDate}_${finalEntry.lotId}`,
       date: selectedDate,
-      lotId: entry.lotId,
-      penId: lots.find(l => l.id === entry.lotId)?.currentPenId || '',
-      dietId: entry.dietId,
-      dietsPerTrato: isStepMode ? entry.dietsPerTrato : undefined, // só grava se for diferente
-      headCount: entry.headCount,
-      daysOnFeed: entry.daysOnFeed,
-      projectedWeight: entry.projectedWeight,
-      bunkScoreYesterday: entry.bunkScore,
+      lotId: finalEntry.lotId,
+      penId: lots.find(l => l.id === finalEntry.lotId)?.currentPenId || '',
+      dietId: finalEntry.dietId,
+      dietsPerTrato: isStepMode ? finalEntry.dietsPerTrato : undefined, // só grava se for diferente
+      headCount: finalEntry.headCount,
+      daysOnFeed: finalEntry.daysOnFeed,
+      projectedWeight: finalEntry.projectedWeight,
+      bunkScoreYesterday: finalEntry.bunkScore,
       adjustmentPercentage: adjustment,
       predictedTotalMN,
       actualTotalMN,
-      drops: entry.drops,
+      drops: finalEntry.drops,
       actualDryMatterPerHead: actualMSPerHead,
       actualDryMatterPercentPV: actualMSPercentPV,
       costPerHead,
@@ -418,6 +586,16 @@ const FeedSheet: React.FC = () => {
             <span className="font-medium">Exportar PDF</span>
           </button>
 
+          <button
+            onClick={() => setShowReplicateModal({ open: true })}
+            disabled={entries.length === 0}
+            className="flex items-center gap-2 bg-white border border-slate-300 px-4 py-2 rounded-lg text-slate-700 hover:bg-slate-50 transition-colors shadow-sm disabled:opacity-50"
+            title="Replicar escore, dieta e step de outra data para TODOS os lotes"
+          >
+            <Copy size={18} className="text-emerald-600" />
+            <span className="font-medium">Replicar</span>
+          </button>
+
           <div className="flex items-center gap-2 bg-white p-2 rounded-lg border shadow-sm">
             <Calendar className="text-slate-400" size={20} />
             <input 
@@ -429,6 +607,48 @@ const FeedSheet: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Modal de Replicação */}
+      {showReplicateModal.open && (
+        <div className="fixed inset-0 bg-slate-900/70 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
+            <h3 className="text-lg font-black uppercase tracking-tight text-slate-900 mb-2">
+              Replicar lançamento
+            </h3>
+            <p className="text-sm text-slate-600 mb-4">
+              {showReplicateModal.targetIndex !== undefined ? (
+                <>Replica escore + dieta + step do lote <strong>{entries[showReplicateModal.targetIndex]?.lotId.toUpperCase()}</strong> a partir da data escolhida.</>
+              ) : (
+                <>Replica escore + dieta + step de <strong>TODOS</strong> os lotes ativos a partir da data escolhida.</>
+              )}
+              <br />
+              <span className="text-xs text-slate-500 italic">Os realizados (kg fornecidos) ficam zerados para preencher hoje.</span>
+            </p>
+            <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Data de origem</label>
+            <input
+              type="date"
+              value={replicateSourceDate}
+              max={selectedDate}
+              onChange={(e) => setReplicateSourceDate(e.target.value)}
+              className="w-full px-3 py-2 border-2 border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none mb-4"
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowReplicateModal({ open: false })}
+                className="flex-1 px-4 py-2 rounded-lg border-2 border-slate-200 text-slate-600 font-bold hover:bg-slate-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleConfirmReplicate}
+                className="flex-1 px-4 py-2 rounded-lg bg-emerald-600 text-white font-bold hover:bg-emerald-700"
+              >
+                Replicar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Main Table — DESKTOP/TABLET (≥ md, evita scroll horizontal em mobile) */}
       <div className="hidden md:block bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
@@ -470,8 +690,20 @@ const FeedSheet: React.FC = () => {
                 const isStepMode = entry.dietsPerTrato.some(d => d !== entry.dietId);
                 const msTotalKg = predictedMSPerHead * (entry.headCount || 0);
 
-                // Cálculo do total + drop predictions (step-aware)
-                const stepResult = isStepMode
+                // Cálculo dinâmico considerando o que JÁ foi digitado nos tratos
+                // O último trato absorve a sobra/falta de MS pra atingir a meta
+                const livePred = calculateLivePredictions(
+                  msTotalKg,
+                  config.treatmentProportions || [25, 25, 25, 25],
+                  entry.dietsPerTrato,
+                  entry.drops || [],
+                  diets,
+                  entry.dietMS
+                );
+
+                // Para "Total Previsto" mantemos a soma das previsões SEM contar o realizado
+                // (representa o "alvo" do dia, não o "previsto + realizado")
+                const fullPredictionResult = isStepMode
                   ? calculateMNWithStep(
                       msTotalKg,
                       config.treatmentProportions || [25, 25, 25, 25],
@@ -480,10 +712,12 @@ const FeedSheet: React.FC = () => {
                       entry.dietMS
                     )
                   : null;
-
-                const predictedTotalMN = stepResult
-                  ? stepResult.totalMN
+                const predictedTotalMN = fullPredictionResult
+                  ? fullPredictionResult.totalMN
                   : Math.round((isNaN(predictedMNPerHead) ? 0 : predictedMNPerHead) * (entry.headCount || 0));
+
+                // Predições por trato (com auto-recálculo do último)
+                const stepResult = { dropPredictions: livePred.dropPredictions };
                 
                 const totalActual = (entry.drops || []).reduce((a, b) => a + (b || 0), 0);
                 const deviation = calculateDeviation(totalActual, predictedTotalMN);
@@ -560,27 +794,25 @@ const FeedSheet: React.FC = () => {
                       const isLast = dropIdx === (config.numTreatments || 4) - 1;
                       const proportion = config.treatmentProportions[dropIdx] || 25;
 
-                      // Drop prediction com step se aplicável
-                      let dropPrediction = 0;
-                      if (stepResult) {
-                        dropPrediction = stepResult.dropPredictions[dropIdx] || 0;
-                      } else if (!isLast) {
-                        dropPrediction = Math.round(predictedTotalMN * (proportion / 100));
-                      } else {
-                        const previousActuals = entry.drops.slice(0, dropIdx).reduce((a, b) => a + b, 0);
-                        dropPrediction = Math.max(0, predictedTotalMN - previousActuals);
-                      }
+                      // Drop prediction com auto-recálculo do último (sempre via livePred)
+                      const dropPrediction = livePred.dropPredictions[dropIdx] || 0;
+                      // O usuário já digitou nesse trato?
+                      const isFilled = (entry.drops[dropIdx] || 0) > 0;
 
                       // Dieta usada nesse trato (lookup pra exibir nome se step ativo)
                       const tratoDietId = entry.dietsPerTrato[dropIdx] || entry.dietId;
                       const tratoDiet = diets.find(d => d.id === tratoDietId);
                       const isDifferentFromMain = tratoDietId !== entry.dietId;
 
+                      // Detecta se este é o último E ele está absorvendo sobra (alguma digitação feita antes)
+                      const anyPrevFilled = entry.drops.slice(0, dropIdx).some(d => (d || 0) > 0);
+                      const isLastAutoAdjusted = isLast && anyPrevFilled && !isFilled;
+
                       return (
                         <td key={dropIdx} className="px-4 py-4 text-center">
                           <div className="flex flex-col items-center gap-1">
-                            <span className="text-[10px] font-bold text-slate-400">
-                              Prev: {dropPrediction.toLocaleString()}
+                            <span className={`text-[10px] font-bold ${isLastAutoAdjusted ? 'text-emerald-600' : 'text-slate-400'}`}>
+                              {isLastAutoAdjusted ? '⚖ Sugerido' : 'Prev'}: {dropPrediction.toLocaleString()}
                             </span>
                             <input
                                 type="number"
@@ -627,24 +859,34 @@ const FeedSheet: React.FC = () => {
                       )}
                     </td>
                     <td className="px-4 py-4 text-center">
-                      <button 
-                        onClick={() => handleSave(index)}
-                        disabled={entry.isSaved || entry.isSaving || totalActual === 0}
-                        className={`
-                          p-2 rounded-lg transition-colors relative flex items-center justify-center mx-auto
-                          ${entry.isSaved 
-                            ? 'bg-slate-100 text-slate-400 cursor-not-allowed' 
-                            : 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm'}
-                          ${entry.isSaving ? 'opacity-80' : ''}
-                        `}
-                        title="Confirmar Trato"
-                      >
-                        {entry.isSaving ? (
-                          <Loader2 size={18} className="animate-spin" />
-                        ) : (
-                          <Save size={18} />
-                        )}
-                      </button>
+                      <div className="flex items-center justify-center gap-1">
+                        <button 
+                          onClick={() => handleSave(index)}
+                          disabled={entry.isSaved || entry.isSaving || totalActual === 0}
+                          className={`
+                            p-2 rounded-lg transition-colors relative flex items-center justify-center
+                            ${entry.isSaved 
+                              ? 'bg-slate-100 text-slate-400 cursor-not-allowed' 
+                              : 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm'}
+                            ${entry.isSaving ? 'opacity-80' : ''}
+                          `}
+                          title="Confirmar Trato"
+                        >
+                          {entry.isSaving ? (
+                            <Loader2 size={18} className="animate-spin" />
+                          ) : (
+                            <Save size={18} />
+                          )}
+                        </button>
+                        <button
+                          onClick={() => setShowReplicateModal({ open: true, targetIndex: index })}
+                          disabled={entry.isSaved}
+                          className="p-2 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-emerald-600 transition-colors disabled:opacity-30"
+                          title="Replicar escore/dieta/step de outra data só pra este lote"
+                        >
+                          <Copy size={16} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -668,10 +910,22 @@ const FeedSheet: React.FC = () => {
           const predictedMNPerHead = dietMSFactor > 0 ? (predictedMSPerHead / dietMSFactor) : 0;
           const isStepMode = entry.dietsPerTrato.some(d => d !== entry.dietId);
           const msTotalKg = predictedMSPerHead * (entry.headCount || 0);
-          const stepResult = isStepMode
+
+          // Predições com auto-recálculo do último trato
+          const livePred = calculateLivePredictions(
+            msTotalKg,
+            config.treatmentProportions || [25, 25, 25, 25],
+            entry.dietsPerTrato,
+            entry.drops || [],
+            diets,
+            entry.dietMS
+          );
+
+          // Total previsto = alvo do dia (sem desconto do realizado)
+          const fullPred = isStepMode
             ? calculateMNWithStep(msTotalKg, config.treatmentProportions || [25, 25, 25, 25], entry.dietsPerTrato, diets, entry.dietMS)
             : null;
-          const totalPredicted = stepResult ? stepResult.totalMN : Math.round(predictedMNPerHead * (entry.headCount || 0));
+          const totalPredicted = fullPred ? fullPred.totalMN : Math.round(predictedMNPerHead * (entry.headCount || 0));
           const totalActual = entry.drops.reduce((a, b) => a + (b || 0), 0);
           const deviation = calculateDeviation(totalActual, totalPredicted);
           const isWithinLimits = totalActual === 0 || (deviation >= (config.loadingLimitLower || -5) && deviation <= (config.loadingLimitUpper || 5));
@@ -720,10 +974,16 @@ const FeedSheet: React.FC = () => {
                     const tratoDietId = entry.dietsPerTrato[dropIdx] || entry.dietId;
                     const tratoDiet = diets.find(d => d.id === tratoDietId);
                     const isDifferent = tratoDietId !== entry.dietId;
-                    const dropPredict = stepResult ? stepResult.dropPredictions[dropIdx] : Math.round(totalPredicted * ((config.treatmentProportions[dropIdx] || 25) / 100));
+                    const isLastTrato = dropIdx === entry.drops.length - 1;
+                    const anyPrevFilled = entry.drops.slice(0, dropIdx).some(d => (d || 0) > 0);
+                    const isAutoAdjusted = isLastTrato && anyPrevFilled && (drop || 0) === 0;
+                    const dropPredict = livePred.dropPredictions[dropIdx] || 0;
                     return (
-                      <div key={dropIdx} className="border rounded-lg p-2">
-                        <div className="text-[9px] font-black text-slate-400 uppercase">Trato {dropIdx + 1} ({config.treatmentProportions[dropIdx] || 0}%)</div>
+                      <div key={dropIdx} className={`border rounded-lg p-2 ${isAutoAdjusted ? 'border-emerald-300 bg-emerald-50/40' : ''}`}>
+                        <div className="text-[9px] font-black text-slate-400 uppercase flex items-center justify-between">
+                          <span>Trato {dropIdx + 1} ({config.treatmentProportions[dropIdx] || 0}%)</span>
+                          {isAutoAdjusted && <span className="text-emerald-600">⚖ sugerido</span>}
+                        </div>
                         <input
                           type="number"
                           inputMode="numeric"
@@ -760,14 +1020,24 @@ const FeedSheet: React.FC = () => {
                     </div>
                   )}
                 </div>
-                <button
-                  onClick={() => handleSave(index)}
-                  disabled={entry.isSaved || entry.isSaving || totalActual === 0}
-                  className={`px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2 ${entry.isSaved ? 'bg-emerald-100 text-emerald-700' : 'bg-emerald-600 text-white hover:bg-emerald-700'} disabled:opacity-50`}
-                >
-                  {entry.isSaving ? <Loader2 className="animate-spin" size={16} /> : entry.isSaved ? <CheckCircle size={16} /> : <Save size={16} />}
-                  {entry.isSaved ? 'Salvo' : 'Salvar'}
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setShowReplicateModal({ open: true, targetIndex: index })}
+                    disabled={entry.isSaved}
+                    className="p-2 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-30"
+                    title="Replicar de outra data"
+                  >
+                    <Copy size={16} />
+                  </button>
+                  <button
+                    onClick={() => handleSave(index)}
+                    disabled={entry.isSaved || entry.isSaving || totalActual === 0}
+                    className={`px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2 ${entry.isSaved ? 'bg-emerald-100 text-emerald-700' : 'bg-emerald-600 text-white hover:bg-emerald-700'} disabled:opacity-50`}
+                  >
+                    {entry.isSaving ? <Loader2 className="animate-spin" size={16} /> : entry.isSaved ? <CheckCircle size={16} /> : <Save size={16} />}
+                    {entry.isSaved ? 'Salvo' : 'Salvar'}
+                  </button>
+                </div>
               </div>
             </div>
           );
