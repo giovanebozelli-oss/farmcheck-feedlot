@@ -4,12 +4,13 @@ import { useAppStore } from '../context';
 import { Database, Search, ChevronRight, Scale, Calendar, Beef, Info, History, Warehouse, Activity, TrendingUp } from 'lucide-react';
 import { Lot, Pen, MovementType, AnimalMovement } from '../types';
 import { Trash2 } from 'lucide-react';
+import { useSessionState } from '../lib/useSessionState';
 
 const LotDatabase: React.FC = () => {
   const { lots, diets, getActiveHeadCount, updateLot, categories, pens, getPenOccupancy, config, movements, deleteLot } = useAppStore();
-  const [activeTab, setActiveTab] = useState<'lots' | 'pens'>('lots');
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedLotId, setSelectedLotId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useSessionState<'lots' | 'pens'>('lotdatabase.tab', 'lots');
+  const [searchTerm, setSearchTerm] = useSessionState<string>('lotdatabase.search', '');
+  const [selectedLotId, setSelectedLotId] = useSessionState<string | null>('lotdatabase.selectedLot', null);
   const [historyView, setHistoryView] = useState(false);
 
   const handleDeleteLot = async (e: React.MouseEvent, lot: Lot) => {

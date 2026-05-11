@@ -9,10 +9,12 @@ import {
   calculateDaysOnFeed,
   calculateConsumptionMetrics,
   getPreviousDayConsumption,
-  calculateAllHeadCounts
+  calculateAllHeadCounts,
+  sortLotsByPen
 } from '../utils';
 import { Calendar, Save, AlertCircle, CheckCircle, Calculator, Info, FileDown, Loader2 } from 'lucide-react';
 import { generateFichaTratoPDF } from '../utils/pdfGenerator';
+import { useSessionState } from '../lib/useSessionState';
 
 interface SheetEntry {
   lotId: string;
@@ -41,7 +43,7 @@ interface SheetEntry {
 
 const FeedSheet: React.FC = () => {
   const { lots, pens, diets, config, feedHistory, getActiveHeadCount, addFeedRecord, movements, updateLot } = useAppStore();
-  const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [selectedDate, setSelectedDate] = useSessionState<string>('feedsheet.date', new Date().toISOString().split('T')[0]);
   const [entries, setEntries] = useState<SheetEntry[]>([]);
   
   const headCounts = useMemo(() => {
@@ -50,11 +52,14 @@ const FeedSheet: React.FC = () => {
 
   // Initialize/Refresh Entries when Date or Dependencies change
   useEffect(() => {
-    // Determine active lots
-    const activeLots = lots.filter(lot => {
-      const heads = headCounts[lot.id] || 0;
-      return heads > 0 && lot.status !== 'CLOSED';
-    });
+    // Determine active lots, sorted by pen name (natural numeric/alphabetic)
+    const activeLots = sortLotsByPen(
+      lots.filter(lot => {
+        const heads = headCounts[lot.id] || 0;
+        return heads > 0 && lot.status !== 'CLOSED';
+      }),
+      pens
+    );
 
     const newEntries: SheetEntry[] = activeLots.map(lot => {
       const pen = pens.find(p => p.id === lot.currentPenId);
@@ -425,8 +430,8 @@ const FeedSheet: React.FC = () => {
         </div>
       </div>
 
-      {/* Main Table */}
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+      {/* Main Table — DESKTOP/TABLET (≥ md, evita scroll horizontal em mobile) */}
+      <div className="hidden md:block bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left">
             <thead className="bg-slate-50 text-slate-500 font-semibold border-b">
@@ -647,6 +652,126 @@ const FeedSheet: React.FC = () => {
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* MOBILE — card stack vertical (oculta em md+) */}
+      <div className="md:hidden space-y-3">
+        {entries.length === 0 && (
+          <div className="bg-white rounded-xl border border-slate-200 p-8 text-center text-slate-400 text-sm">
+            Nenhum lote ativo encontrado para esta data.
+          </div>
+        )}
+        {entries.map((entry, index) => {
+          const adjustment = getAdjustmentForScore(entry.bunkScore, config.bunkScoreAdjustments || []);
+          const predictedMSPerHead = (entry.prevConsumptionMS || 0) * (1 + (adjustment / 100));
+          const dietMSFactor = (entry.dietMS || 60) / 100;
+          const predictedMNPerHead = dietMSFactor > 0 ? (predictedMSPerHead / dietMSFactor) : 0;
+          const isStepMode = entry.dietsPerTrato.some(d => d !== entry.dietId);
+          const msTotalKg = predictedMSPerHead * (entry.headCount || 0);
+          const stepResult = isStepMode
+            ? calculateMNWithStep(msTotalKg, config.treatmentProportions || [25, 25, 25, 25], entry.dietsPerTrato, diets, entry.dietMS)
+            : null;
+          const totalPredicted = stepResult ? stepResult.totalMN : Math.round(predictedMNPerHead * (entry.headCount || 0));
+          const totalActual = entry.drops.reduce((a, b) => a + (b || 0), 0);
+          const deviation = calculateDeviation(totalActual, totalPredicted);
+          const isWithinLimits = totalActual === 0 || (deviation >= (config.loadingLimitLower || -5) && deviation <= (config.loadingLimitUpper || 5));
+
+          return (
+            <div key={entry.lotId + index} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+              {/* Cabeçalho */}
+              <div className="p-3 bg-slate-50 flex items-center justify-between border-b">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <div className="bg-emerald-600 text-white px-2 py-0.5 rounded text-[10px] font-black">{entry.penName}</div>
+                    <div className="font-bold text-slate-900 text-sm">{entry.lotId.toUpperCase()}</div>
+                  </div>
+                  <div className="text-[10px] text-slate-500 mt-0.5">
+                    {entry.headCount} cab · {entry.dietName} · DOF {entry.daysOnFeed}
+                  </div>
+                </div>
+                {entry.isSaved && (
+                  <span className="bg-emerald-100 text-emerald-700 text-[10px] font-bold px-2 py-1 rounded">SALVO</span>
+                )}
+              </div>
+
+              {/* Leitura de cocho */}
+              <div className="p-3 border-b">
+                <div className="text-[10px] font-bold text-slate-500 uppercase mb-1">Leitura Cocho (escore ontem)</div>
+                <select
+                  value={entry.bunkScore}
+                  onChange={(e) => handleBunkScoreChange(index, e.target.value)}
+                  disabled={entry.isSaved}
+                  className="w-full px-3 py-2 border rounded-lg text-sm font-bold focus:ring-2 focus:ring-emerald-500 outline-none disabled:bg-slate-100"
+                >
+                  {[0, 0.5, 1, 1.5, 2, 3, 4].map(s => (
+                    <option key={s} value={s}>Escore {s} ({adjustment > 0 && s === entry.bunkScore ? '+' : ''}{getAdjustmentForScore(s as any, config.bunkScoreAdjustments || [])}%)</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Tratos */}
+              <div className="p-3 border-b">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-[10px] font-bold text-slate-500 uppercase">Tratos (kg MN)</div>
+                  <div className="text-[10px] text-slate-400">Previsto: <strong className="text-slate-700">{totalPredicted.toLocaleString()}</strong></div>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  {entry.drops.map((drop, dropIdx) => {
+                    const tratoDietId = entry.dietsPerTrato[dropIdx] || entry.dietId;
+                    const tratoDiet = diets.find(d => d.id === tratoDietId);
+                    const isDifferent = tratoDietId !== entry.dietId;
+                    const dropPredict = stepResult ? stepResult.dropPredictions[dropIdx] : Math.round(totalPredicted * ((config.treatmentProportions[dropIdx] || 25) / 100));
+                    return (
+                      <div key={dropIdx} className="border rounded-lg p-2">
+                        <div className="text-[9px] font-black text-slate-400 uppercase">Trato {dropIdx + 1} ({config.treatmentProportions[dropIdx] || 0}%)</div>
+                        <input
+                          type="number"
+                          inputMode="numeric"
+                          value={drop || ''}
+                          onChange={(e) => handleInputChange(index, dropIdx, e.target.value)}
+                          disabled={entry.isSaved}
+                          placeholder={dropPredict.toString()}
+                          className="w-full mt-1 px-2 py-1.5 border rounded text-center font-bold focus:ring-2 focus:ring-emerald-500 outline-none disabled:bg-slate-100"
+                        />
+                        <select
+                          value={tratoDietId}
+                          onChange={(e) => handleTratoDietChange(index, dropIdx, e.target.value)}
+                          disabled={entry.isSaved}
+                          className={`w-full mt-1 text-[9px] px-1 py-0.5 rounded border truncate ${isDifferent ? 'border-amber-400 bg-amber-50 text-amber-800 font-bold' : 'border-slate-200 bg-white text-slate-500'} disabled:opacity-50`}
+                        >
+                          {diets.filter(d => d.status === 'ACTIVE').map(d => (
+                            <option key={d.id} value={d.id}>{d.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Rodapé com totais e ação */}
+              <div className="p-3 flex items-center justify-between">
+                <div>
+                  <div className="text-[10px] text-slate-400 uppercase">Realizado</div>
+                  <div className="font-mono text-lg font-bold text-slate-800">{totalActual > 0 ? totalActual.toLocaleString() : '-'}</div>
+                  {totalActual > 0 && (
+                    <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold mt-1 ${isWithinLimits ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                      {deviation > 0 ? '+' : ''}{deviation.toFixed(1)}%
+                    </div>
+                  )}
+                </div>
+                <button
+                  onClick={() => handleSave(index)}
+                  disabled={entry.isSaved || entry.isSaving || totalActual === 0}
+                  className={`px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2 ${entry.isSaved ? 'bg-emerald-100 text-emerald-700' : 'bg-emerald-600 text-white hover:bg-emerald-700'} disabled:opacity-50`}
+                >
+                  {entry.isSaving ? <Loader2 className="animate-spin" size={16} /> : entry.isSaved ? <CheckCircle size={16} /> : <Save size={16} />}
+                  {entry.isSaved ? 'Salvo' : 'Salvar'}
+                </button>
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

@@ -4,6 +4,7 @@ import { useAppStore } from '../context';
 import { Settings as SettingsIcon, Warehouse, Plus, Trash2, Minus } from 'lucide-react';
 import { Pen, Lot, Ingredient } from '../types';
 import { DEFAULT_CONFIG } from '../constants';
+import { useSessionState } from '../lib/useSessionState';
 
 // Tab Components using Context
 const GeneralParamsTab = () => {
@@ -447,7 +448,7 @@ const StructuresTab = () => {
 };
 
 const Settings: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'geral' | 'estruturas'>('geral');
+  const [activeTab, setActiveTab] = useSessionState<'geral' | 'estruturas'>('settings.tab', 'geral');
 
   const tabs = [
     { id: 'geral', label: 'Parâmetros Gerais', icon: <SettingsIcon size={18} /> },

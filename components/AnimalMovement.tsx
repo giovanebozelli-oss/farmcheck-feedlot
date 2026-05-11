@@ -3,14 +3,15 @@ import { MovementType, AnimalMovement, Lot } from '../types';
 import { useAppStore } from '../context';
 import { ArrowRight, PlusCircle, AlertCircle, History, Info, MapPin, Gauge, Scaling, Beef, User, Calendar as CalendarIcon, ClipboardList, Trash2, ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useSessionState } from '../lib/useSessionState';
 
 const AnimalMovementPage: React.FC = () => {
   const { lots, movements, addMovement, addLot, pens, categories, config, diets, getActiveHeadCount, executeMovement } = useAppStore();
-  const [activeTab, setActiveTab] = useState<'register_lot' | 'movements' | 'history'>('register_lot');
+  const [activeTab, setActiveTab] = useSessionState<'register_lot' | 'movements' | 'history'>('animalmovement.tab', 'register_lot');
   
   const gmdCurves = config.gmdCurves || [];
-  // Lot Registration State
-  const [newLot, setNewLot] = useState<Partial<Lot>>({
+  // Lot Registration State (persiste o rascunho entre navegação por sessão)
+  const [newLot, setNewLot] = useSessionState<Partial<Lot>>('animalmovement.newLot', {
     name: '',
     entryDate: new Date().toISOString().split('T')[0],
     initialWeight: 0,
@@ -23,7 +24,7 @@ const AnimalMovementPage: React.FC = () => {
     gmdCurveId: 'curva_padrao',
   });
 
-  const [movementForm, setMovementForm] = useState({
+  const [movementForm, setMovementForm] = useSessionState('animalmovement.form', {
     date: new Date().toISOString().split('T')[0],
     lotId: '',
     type: MovementType.Death,

@@ -571,8 +571,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     };
     await addMovement(movement);
 
-    // 2. Se NÃO for transferência, terminamos. Death/Exit/Refusal já reduziram via deltaTotal.
+    // 2. Se NÃO for transferência, verificamos se o lote zerou e auto-fechamos.
+    // Death/Exit/Refusal já reduziram via deltaTotal (deltaCount = currentCount - quantity).
     if (mov.type !== MovementType.Transfer || !mov.destinationPenId) {
+      const remainingHeads = currentCount - quantity;
+      if (remainingHeads <= 0 && sourceLot.status === 'ACTIVE') {
+        // Lote zerado: fecha automaticamente (#12)
+        await updateLot(sourceLot.id, { status: 'CLOSED' });
+      }
       return;
     }
 

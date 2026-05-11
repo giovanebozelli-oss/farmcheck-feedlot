@@ -1,11 +1,12 @@
 
 import React, { useState } from 'react';
 import { useAppStore } from '../context';
-import { calculateDaysOnFeed, calculateProjectedWeight, formatCurrency, calculateAllHeadCounts } from '../utils';
+import { calculateDaysOnFeed, calculateProjectedWeight, formatCurrency, calculateAllHeadCounts, sortLotsByPen } from '../utils';
 import { FileDown, FileText, Lock, Unlock, X, TrendingUp, ChevronRight, Trash2, Wheat } from 'lucide-react';
 import { generateZootecnicoPDF, generateInsumosPDF } from '../utils/pdfGenerator';
 import { generateZootecnicoExcel, generateInsumosExcel } from '../utils/excelGenerator';
 import { MovementType, Lot, Pen, Diet, Ingredient, DailyFeedRecord } from '../types';
+import { useSessionState } from '../lib/useSessionState';
 import { 
   XAxis, 
   YAxis, 
@@ -89,24 +90,25 @@ function computeInsumosUsage(
 
 const Reports: React.FC = () => {
   const { lots, pens, diets, feedHistory, ingredients, categories, movements, deleteFeedRecord, deleteMovement, config } = useAppStore();
-  const [activeTab, setActiveTab] = useState<'zootecnico' | 'fechamento' | 'insumos' | 'registros'>('zootecnico');
-  const [selectedLotId, setSelectedLotId] = useState<string | null>(null);
-  const [selectedPenId, setSelectedPenId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useSessionState<'zootecnico' | 'fechamento' | 'insumos' | 'registros'>('reports.activeTab', 'zootecnico');
+  const [selectedLotId, setSelectedLotId] = useSessionState<string | null>('reports.selectedLotId', null);
+  const [selectedPenId, setSelectedPenId] = useSessionState<string | null>('reports.selectedPenId', null);
 
   // Filtro de lote pra aba de Insumos (vazio = todos os lotes)
-  const [insumosLotFilter, setInsumosLotFilter] = useState<string>('');
+  const [insumosLotFilter, setInsumosLotFilter] = useSessionState<string>('reports.insumosLotFilter', '');
 
   const today = new Date().toISOString().split('T')[0];
-  const [analysisDate, setAnalysisDate] = useState(today);
-  const [startDate, setStartDate] = useState(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
-  const [endDate, setEndDate] = useState(today);
+  const [analysisDate, setAnalysisDate] = useSessionState<string>('reports.analysisDate', today);
+  const [startDate, setStartDate] = useSessionState<string>('reports.startDate', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
+  const [endDate, setEndDate] = useSessionState<string>('reports.endDate', today);
   
   const headCounts = React.useMemo(() => {
     return calculateAllHeadCounts(lots, movements, analysisDate);
   }, [lots, movements, analysisDate]);
 
   const zootecnicoData = React.useMemo(() => {
-    return lots.map(lot => {
+    // Ordena por baia (natural numérico/alfabético) antes de processar
+    return sortLotsByPen(lots, pens).map(lot => {
       const lotHistory = feedHistory.filter(h => h.lotId === lot.id).sort((a,b) => b.date.localeCompare(a.date));
       const todayRecord = lotHistory.find(h => h.date === analysisDate);
       
@@ -427,11 +429,11 @@ const Reports: React.FC = () => {
         <div className={`${(selectedLotId || selectedPenId) ? 'lg:col-span-8' : 'lg:col-span-12'} transition-all duration-300`}>
           {activeTab === 'zootecnico' ? (
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs text-left whitespace-nowrap">
+              <div className="overflow-x-auto -mx-2 sm:mx-0">
+                <table className="w-full text-[10px] sm:text-xs text-left whitespace-nowrap">
                   <thead className="bg-slate-900 text-white font-bold">
                     <tr>
-                      <th rowSpan={2} className="px-4 py-4 sticky left-0 bg-slate-900 z-10 border-r border-slate-700">Lote / Baia</th>
+                      <th rowSpan={2} className="px-4 py-4 sticky left-0 bg-slate-900 z-10 border-r border-slate-700">Baia / Lote</th>
                       <th rowSpan={2} className="px-4 py-4 text-center">Cat.</th>
                       <th rowSpan={2} className="px-4 py-4 text-center">Dieta</th>
                       <th rowSpan={2} className="px-4 py-4 text-center">Cab.</th>

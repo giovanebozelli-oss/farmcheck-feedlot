@@ -214,3 +214,28 @@ export const formatCurrency = (val: number) =>
 
 export const formatNumber = (val: number, digits = 2) => 
   val.toLocaleString('pt-BR', {minimumFractionDigits: digits, maximumFractionDigits: digits});
+
+/**
+ * Compara nomes de baias/lotes em ordem natural:
+ * "Curral 1", "Curral 2", "Curral 10" (não "1", "10", "2")
+ * Suporta letras + números misturados.
+ */
+export const compareNatural = (a: string, b: string): number => {
+  return (a || '').localeCompare(b || '', 'pt-BR', { numeric: true, sensitivity: 'base' });
+};
+
+/** Ordena lotes pela baia atual (natural), depois pelo nome do lote */
+export const sortLotsByPen = <T extends { currentPenId?: string; name: string }>(
+  lots: T[],
+  pens: { id: string; name: string }[]
+): T[] => {
+  const penNameById: Record<string, string> = {};
+  for (const p of pens) penNameById[p.id] = p.name;
+  return [...lots].sort((a, b) => {
+    const penA = a.currentPenId ? penNameById[a.currentPenId] || '' : '';
+    const penB = b.currentPenId ? penNameById[b.currentPenId] || '' : '';
+    const byPen = compareNatural(penA, penB);
+    if (byPen !== 0) return byPen;
+    return compareNatural(a.name, b.name);
+  });
+};
