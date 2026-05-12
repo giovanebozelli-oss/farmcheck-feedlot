@@ -7,6 +7,7 @@ import { generateZootecnicoPDF, generateInsumosPDF, generateLancamentosTratosPDF
 import { generateZootecnicoExcel, generateInsumosExcel, generateLancamentosTratosExcel, generateLancamentosMovimentosExcel } from '../utils/excelGenerator';
 import { MovementType, Lot, Pen, Diet, Ingredient, DailyFeedRecord } from '../types';
 import { useSessionState } from '../lib/useSessionState';
+import FechamentoFinanceiro from './FechamentoFinanceiro';
 import { 
   XAxis, 
   YAxis, 
@@ -202,16 +203,63 @@ const Reports: React.FC = () => {
 
   const consumptionHistory = React.useMemo(() => {
     if (!selectedLotId) return [];
+    const lot = lots.find(l => l.id === selectedLotId);
+    if (!lot) return [];
     return feedHistory
       .filter(h => h.lotId === selectedLotId)
       .sort((a,b) => a.date.localeCompare(b.date))
-      .map(h => ({
-        date: h.date.split('-').slice(1).reverse().join('/'),
-        cms: Number(h.actualDryMatterPerHead.toFixed(2)),
-        pv: Number(h.actualDryMatterPercentPV.toFixed(2)),
-        score: h.bunkScoreYesterday
-      }));
-  }, [selectedLotId, feedHistory]);
+      .map(h => {
+        const diet = diets.find(d => d.id === h.dietId);
+        const dof = calculateDaysOnFeed(lot.entryDate, h.date);
+        return {
+          date: h.date.split('-').slice(1).reverse().join('/'),
+          fullDate: h.date,
+          cms: Number((h.actualDryMatterPerHead || 0).toFixed(2)),
+          pv: Number((h.actualDryMatterPercentPV || 0).toFixed(2)),
+          score: h.bunkScoreYesterday,
+          dietId: h.dietId,
+          dietName: diet?.name || '-',
+          dof,
+        };
+      });
+  }, [selectedLotId, feedHistory, lots, diets]);
+
+  // #10 — Mapeamento de cor por dieta (cada dieta tem cor fixa)
+  // Permite que o gráfico mostre visualmente quando o lote mudou de dieta
+  const dietColorMap = React.useMemo(() => {
+    const palette = [
+      '#10b981', // emerald
+      '#3b82f6', // blue
+      '#f59e0b', // amber
+      '#8b5cf6', // violet
+      '#ef4444', // red
+      '#06b6d4', // cyan
+      '#ec4899', // pink
+      '#84cc16', // lime
+      '#f97316', // orange
+      '#6366f1', // indigo
+    ];
+    const map: Record<string, string> = {};
+    let idx = 0;
+    consumptionHistory.forEach(h => {
+      if (!map[h.dietId]) {
+        map[h.dietId] = palette[idx % palette.length];
+        idx++;
+      }
+    });
+    return map;
+  }, [consumptionHistory]);
+
+  // Dietas únicas usadas no período (pra legenda)
+  const dietsUsedInPeriod = React.useMemo(() => {
+    const set = new Map<string, string>();
+    consumptionHistory.forEach(h => {
+      if (h.dietId && !set.has(h.dietId)) {
+        set.set(h.dietId, h.dietName);
+      }
+    });
+    return Array.from(set.entries()).map(([id, name]) => ({ id, name, color: dietColorMap[id] }));
+  }, [consumptionHistory, dietColorMap]);
 
   const selectedLotData = zootecnicoData.find(d => d.lotId === selectedLotId);
 
@@ -438,7 +486,7 @@ const Reports: React.FC = () => {
                 onClick={() => setActiveTab('fechamento')}
                 className={`text-xs font-black uppercase tracking-widest pb-2 border-b-2 transition-all ${activeTab === 'fechamento' ? 'border-emerald-600 text-emerald-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
               >
-                Simulação de Fechamento
+                Fechamento Zootécnico e Financeiro
               </button>
               <button 
                 onClick={() => setActiveTab('insumos')}
@@ -617,7 +665,7 @@ const Reports: React.FC = () => {
               </div>
             </div>
           ) : activeTab === 'fechamento' ? (
-            <FechamentoReport analysisDate={analysisDate} headCounts={headCounts} />
+            <FechamentoFinanceiro analysisDate={analysisDate} headCounts={headCounts} />
           ) : activeTab === 'insumos' ? (
             <InsumosReport
               startDate={startDate}
@@ -663,41 +711,63 @@ const Reports: React.FC = () => {
 
                     <div className="h-[250px] w-full mb-6">
                       <ResponsiveContainer width="100%" height="100%">
-                        <AreaChart data={consumptionHistory}>
-                          <defs>
-                            <linearGradient id="colorCms" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
-                              <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                            </linearGradient>
-                          </defs>
+                        <BarChart data={consumptionHistory} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                          <XAxis 
-                            dataKey="date" 
-                            axisLine={false} 
-                            tickLine={false} 
-                            tick={{fill: '#94a3b8', fontSize: 10}} 
-                          />
-                          <YAxis 
-                            axisLine={false} 
-                            tickLine={false} 
+                          <XAxis
+                            dataKey="date"
+                            axisLine={false}
+                            tickLine={false}
                             tick={{fill: '#94a3b8', fontSize: 10}}
                           />
-                          <Tooltip 
-                            contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}} 
-                            itemStyle={{fontWeight: 'bold', fontSize: '12px'}}
+                          <YAxis
+                            axisLine={false}
+                            tickLine={false}
+                            tick={{fill: '#94a3b8', fontSize: 10}}
+                            label={{ value: 'CMS (kg MS/cab)', angle: -90, position: 'insideLeft', style: { fontSize: 10, fill: '#94a3b8' } }}
                           />
-                          <Area 
-                            type="monotone" 
-                            dataKey="cms" 
-                            name="CMS (kg/cab)" 
-                            stroke="#10b981" 
-                            strokeWidth={3} 
-                            fillOpacity={1} 
-                            fill="url(#colorCms)" 
+                          <Tooltip
+                            contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', padding: '10px'}}
+                            content={({ active, payload }) => {
+                              if (!active || !payload || !payload[0]) return null;
+                              const d = payload[0].payload;
+                              const color = dietColorMap[d.dietId] || '#10b981';
+                              return (
+                                <div style={{ background: 'white', borderRadius: 10, boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', padding: 10, fontSize: 11, minWidth: 160 }}>
+                                  <div style={{ fontWeight: 'bold', marginBottom: 6, color: '#0f172a' }}>{d.fullDate?.split('-').reverse().join('/')}</div>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                                    <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 2, background: color }} />
+                                    <span style={{ fontWeight: 'bold' }}>{d.dietName}</span>
+                                  </div>
+                                  <div style={{ color: '#64748b', lineHeight: 1.6 }}>
+                                    <div>DOF: <strong style={{ color: '#0f172a' }}>{d.dof} dias</strong></div>
+                                    <div>CMS MS: <strong style={{ color: '#0f172a' }}>{d.cms.toFixed(2)} kg</strong></div>
+                                    <div>%PV: <strong style={{ color: '#0f172a' }}>{d.pv.toFixed(2)}%</strong></div>
+                                    {d.score !== undefined && <div>Escore cocho: <strong style={{ color: '#0f172a' }}>{d.score}</strong></div>}
+                                  </div>
+                                </div>
+                              );
+                            }}
                           />
-                        </AreaChart>
+                          <Bar dataKey="cms" radius={[4, 4, 0, 0]}>
+                            {consumptionHistory.map((entry, index) => (
+                              <Cell key={index} fill={dietColorMap[entry.dietId] || '#10b981'} />
+                            ))}
+                          </Bar>
+                        </BarChart>
                       </ResponsiveContainer>
                     </div>
+
+                    {/* Legenda de dietas usadas no período */}
+                    {dietsUsedInPeriod.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mb-4 px-1">
+                        {dietsUsedInPeriod.map(d => (
+                          <div key={d.id} className="inline-flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-2 py-1 rounded-md">
+                            <span className="w-2.5 h-2.5 rounded-sm" style={{ background: d.color }} />
+                            <span className="text-[10px] font-bold text-slate-700">{d.name}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
 
                     <div className="grid grid-cols-2 gap-4">
                        <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
@@ -786,89 +856,8 @@ const Reports: React.FC = () => {
   );
 };
 
-const FechamentoReport: React.FC<{ analysisDate: string, headCounts: Record<string, number> }> = ({ analysisDate, headCounts }) => {
-  const { lots, updateLot, categories } = useAppStore();
-  const closedLots = lots.filter(l => {
-    // Only show lots that were already entered on the analysis date AND had animals at that time
-    const isEntered = new Date(l.entryDate) <= new Date(analysisDate);
-    const hasAnimals = headCounts[l.id] > 0;
-    return isEntered && hasAnimals && (l.status === 'CLOSED' || l.status === 'ACTIVE');
-  });
 
-  return (
-    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-       <div className="overflow-x-auto">
-            <table className="w-full text-xs text-left whitespace-nowrap">
-              <thead className="bg-slate-900 text-white font-bold border-b border-slate-700">
-                <tr>
-                  <th className="px-6 py-4">Lote</th>
-                  <th className="px-6 py-4">Categoria</th>
-                  <th className="px-6 py-4">Entrada</th>
-                  <th className="px-6 py-4">Saída (Proj)</th>
-                  <th className="px-6 py-4 text-center">Peso Ent.</th>
-                  <th className="px-6 py-4 text-center">Peso Saída</th>
-                  <th className="px-6 py-4 text-center">GMD</th>
-                  <th className="px-6 py-4 text-center">Produção @</th>
-                  <th className="px-6 py-4 text-center bg-amber-900">Margem Est.</th>
-                  <th className="px-6 py-4 text-right">Status</th>
-                  <th className="px-6 py-4 text-center">Ação</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {closedLots.map(lot => {
-                  const daysOnFeed = calculateDaysOnFeed(lot.entryDate, analysisDate) || 0;
-                  const projWeight = calculateProjectedWeight(lot.initialWeight || 0, 1.6, daysOnFeed) || 0;
-                  const prodArrobasVal = (projWeight * 0.54 - (lot.initialWeight || 0) * 0.50) / 15;
-                  const prodArrobas = isNaN(prodArrobasVal) ? 0 : prodArrobasVal;
-                  
-                  return (
-                    <tr key={lot.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-6 py-4 font-black">{lot.name}</td>
-                      <td className="px-6 py-4 text-slate-500 font-bold text-[10px] uppercase">
-                        {categories.find(c => c.id === lot.categoryId)?.name || '-'}
-                      </td>
-                      <td className="px-6 py-4 text-slate-500">{lot.entryDate.split('-').reverse().join('/')}</td>
-                      <td className="px-6 py-4 text-slate-500">{analysisDate.split('-').reverse().join('/')}</td>
-                      <td className="px-6 py-4 text-center font-mono">{lot.initialWeight.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} kg</td>
-                      <td className="px-6 py-4 text-center font-black text-slate-800">{projWeight.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} kg</td>
-                      <td className="px-6 py-4 text-center text-emerald-600 font-black">1.60</td>
-                      <td className="px-6 py-4 text-center font-bold tracking-tighter">{prodArrobas.toFixed(2)} @</td>
-                      <td className="px-6 py-4 text-center bg-amber-50/50 text-amber-700 font-black">
-                        R$ 485,00/cab
-                      </td>
-                      <td className="px-6 py-4 text-right">
-                        <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${lot.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
-                          {lot.status === 'ACTIVE' ? 'EM DESEMPENHO' : 'FINALIZADO'}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-center">
-                        {lot.status === 'ACTIVE' ? (
-                          <button 
-                            onClick={() => updateLot(lot.id, { status: 'CLOSED' })}
-                            className="bg-slate-800 text-white p-2 rounded-lg hover:bg-slate-700 transition"
-                            title="Encerrar Lote"
-                          >
-                            <Lock size={16} />
-                          </button>
-                        ) : (
-                          <button 
-                            onClick={() => updateLot(lot.id, { status: 'ACTIVE' })}
-                            className="text-slate-400 hover:text-emerald-600 transition p-2"
-                            title="Reabrir Lote"
-                          >
-                            <Unlock size={16} />
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-       </div>
-    </div>
-  );
-}
+// (FechamentoReport antigo foi removido — agora usamos FechamentoFinanceiro em components/FechamentoFinanceiro.tsx)
 
 interface InsumosReportProps {
   startDate: string;

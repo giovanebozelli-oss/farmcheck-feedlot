@@ -13,6 +13,7 @@ import {
   AnimalMovement,
   DailyFeedRecord,
   AppConfig,
+  Closing,
 } from '../types';
 
 // Helper genérico de mapeamento ----------------------------------
@@ -187,3 +188,44 @@ export function configToDb(cfg: AppConfig): Record<string, unknown> {
     gmd_curves: cfg.gmdCurves,
   };
 }
+
+// ---- Closing ----
+const closingMap: Mapping = {
+  id: 'id',
+  lotId: 'lot_id',
+  closingDate: 'closing_date',
+  headsSlaughtered: 'heads_slaughtered',
+  purchasePricePerHead: 'purchase_price_per_head',
+  salePricePerArroba: 'sale_price_per_arroba',
+  finalLiveWeightKg: 'final_live_weight_kg',
+  carcassWeightKg: 'carcass_weight_kg',
+  carcassWeightArroba: 'carcass_weight_arroba',
+  operationalCostPerHeadPerDay: 'operational_cost_per_head_per_day',
+  taxesPerHead: 'taxes_per_head',
+  initialYieldPercent: 'initial_yield_percent',
+  daysOnFeed: 'days_on_feed',
+  initialWeightKg: 'initial_weight_kg',
+  avgMSConsumptionPerHeadPerDay: 'avg_ms_consumption_per_head_per_day',
+  avgNutritionalCostPerHeadPerDay: 'avg_nutritional_cost_per_head_per_day',
+  arrobasInitial: 'arrobas_initial',
+  arrobasFinal: 'arrobas_final',
+  arrobasProduced: 'arrobas_produced',
+  gmd: 'gmd',
+  gdc: 'gdc',
+  biologicalEfficiency: 'biological_efficiency',
+  costPerArrobaProduced: 'cost_per_arroba_produced',
+  revenuePerHead: 'revenue_per_head',
+  totalExpensePerHead: 'total_expense_per_head',
+  profitPerHead: 'profit_per_head',
+  profitabilityPeriodPercent: 'profitability_period_percent',
+  profitabilityMonthlyPercent: 'profitability_monthly_percent',
+  notes: 'notes',
+  createdAt: 'created_at',
+  updatedAt: 'updated_at',
+};
+
+export const closingToDb = (c: Partial<Closing>) =>
+  objToDb<Closing>(c, closingMap);
+
+export const closingFromDb = (row: Record<string, unknown>) =>
+  dbToObj<Closing>(row, closingMap);

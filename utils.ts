@@ -239,3 +239,138 @@ export const sortLotsByPen = <T extends { currentPenId?: string; name: string }>
     return compareNatural(a.name, b.name);
   });
 };
+
+// =====================================================================
+// Fechamento Zootécnico e Financeiro — Cálculos
+// =====================================================================
+export interface ClosingInputs {
+  // do lote
+  initialWeightKg: number;
+  daysOnFeed: number;
+  // do consumo (período)
+  avgMSConsumptionPerHeadPerDay: number;     // kg MS/cab/dia médio
+  avgNutritionalCostPerHeadPerDay: number;   // R$/cab/dia médio
+  // do usuário
+  headsSlaughtered: number;
+  purchasePricePerHead: number;
+  salePricePerArroba: number;
+  finalLiveWeightKg?: number;        // p/ GMD
+  carcassWeightKg?: number;          // p/ @ produzida e GDC
+  carcassWeightArroba?: number;      // alternativa em @
+  operationalCostPerHeadPerDay: number;
+  taxesPerHead: number;
+  initialYieldPercent: number;       // default 50
+}
+
+export interface ClosingResults {
+  arrobasInitial: number;
+  arrobasFinal: number;
+  arrobasProduced: number;
+  gmd: number;
+  gdc: number;
+  biologicalEfficiency: number;       // kg MS pra produzir 1 @
+  costPerArrobaProduced: number;
+  revenuePerHead: number;
+  totalExpensePerHead: number;
+  profitPerHead: number;
+  profitabilityPeriodPercent: number;
+  profitabilityMonthlyPercent: number;
+  // Detalhes que ajudam a explicar
+  nutritionalCostTotalPerHead: number;
+  operationalCostTotalPerHead: number;
+  msConsumptionTotalPerHead: number;
+  yieldEstimated: number;             // % rendimento real estimado (carcaça/peso vivo final)
+}
+
+export const computeClosingMetrics = (i: ClosingInputs): ClosingResults => {
+  const dof = Math.max(0, i.daysOnFeed || 0);
+
+  // 1. @ inicial (com rendimento informado, default 50%)
+  const yieldFactor = (i.initialYieldPercent || 50) / 100;
+  const arrobasInitial = (i.initialWeightKg * yieldFactor) / 15;
+
+  // 2. @ final — prioridade: se digitou carcaça em @ usa; senão usa carcaça em kg / 15
+  let arrobasFinal = 0;
+  let carcassKg = 0;
+  if (i.carcassWeightArroba && i.carcassWeightArroba > 0) {
+    arrobasFinal = i.carcassWeightArroba;
+    carcassKg = i.carcassWeightArroba * 15;
+  } else if (i.carcassWeightKg && i.carcassWeightKg > 0) {
+    carcassKg = i.carcassWeightKg;
+    arrobasFinal = i.carcassWeightKg / 15;
+  }
+
+  // 3. @ produzidas
+  const arrobasProduced = arrobasFinal - arrobasInitial;
+
+  // 4. GMD (kg/dia) — fórmula do usuário: (peso final vivo - peso inicial) / DOF
+  const gmd = dof > 0 && (i.finalLiveWeightKg || 0) > 0
+    ? ((i.finalLiveWeightKg as number) - i.initialWeightKg) / dof
+    : 0;
+
+  // 5. GDC (Ganho Diário de Carcaça) = (carcaça - @ inicial em kg) / DOF
+  const initialCarcassKg = i.initialWeightKg * yieldFactor;
+  const gdc = dof > 0 && carcassKg > 0
+    ? (carcassKg - initialCarcassKg) / dof
+    : 0;
+
+  // 6. Consumo total MS/cab
+  const msConsumptionTotalPerHead = i.avgMSConsumptionPerHeadPerDay * dof;
+
+  // 7. Eficiência biológica = kg MS / @ produzidas
+  const biologicalEfficiency = arrobasProduced > 0
+    ? msConsumptionTotalPerHead / arrobasProduced
+    : 0;
+
+  // 8. Custos totais/cab
+  const nutritionalCostTotalPerHead = i.avgNutritionalCostPerHeadPerDay * dof;
+  const operationalCostTotalPerHead = i.operationalCostPerHeadPerDay * dof;
+  const totalExpensePerHead =
+    i.purchasePricePerHead +
+    nutritionalCostTotalPerHead +
+    operationalCostTotalPerHead +
+    i.taxesPerHead;
+
+  // 9. Custo por @ produzida (descontando compra, só pra ver custo de PRODUÇÃO da @)
+  // Convenção: divide o custo de engorda (nutricional + operacional + impostos) pelas @ produzidas
+  const fatteningCost = nutritionalCostTotalPerHead + operationalCostTotalPerHead + i.taxesPerHead;
+  const costPerArrobaProduced = arrobasProduced > 0
+    ? fatteningCost / arrobasProduced
+    : 0;
+
+  // 10. Receita/cab e lucro
+  const revenuePerHead = arrobasFinal * i.salePricePerArroba;
+  const profitPerHead = revenuePerHead - totalExpensePerHead;
+
+  // 11. Rentabilidade
+  const profitabilityPeriodPercent = totalExpensePerHead > 0
+    ? (profitPerHead / totalExpensePerHead) * 100
+    : 0;
+  const profitabilityMonthlyPercent = dof > 0
+    ? (profitabilityPeriodPercent * 30) / dof
+    : 0;
+
+  // 12. Rendimento estimado (informativo)
+  const yieldEstimated = (i.finalLiveWeightKg || 0) > 0 && carcassKg > 0
+    ? (carcassKg / (i.finalLiveWeightKg as number)) * 100
+    : 0;
+
+  return {
+    arrobasInitial,
+    arrobasFinal,
+    arrobasProduced,
+    gmd,
+    gdc,
+    biologicalEfficiency,
+    costPerArrobaProduced,
+    revenuePerHead,
+    totalExpensePerHead,
+    profitPerHead,
+    profitabilityPeriodPercent,
+    profitabilityMonthlyPercent,
+    nutritionalCostTotalPerHead,
+    operationalCostTotalPerHead,
+    msConsumptionTotalPerHead,
+    yieldEstimated,
+  };
+};

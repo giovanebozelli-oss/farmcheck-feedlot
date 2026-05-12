@@ -152,3 +152,47 @@ export interface AppConfig {
   loadingLimitUpper: number;
   gmdCurves: GMDCurve[];
 }
+
+// =====================================================================
+// Fechamento Zootécnico e Financeiro de um lote
+// =====================================================================
+export interface Closing {
+  id: string;
+  lotId: string;
+  closingDate: string;
+
+  // Inputs do usuário
+  headsSlaughtered: number;
+  purchasePricePerHead: number;
+  salePricePerArroba: number;
+  finalLiveWeightKg?: number;
+  carcassWeightKg?: number;
+  carcassWeightArroba?: number;
+  operationalCostPerHeadPerDay: number;
+  taxesPerHead: number;
+  initialYieldPercent: number;
+
+  // Snapshots
+  daysOnFeed: number;
+  initialWeightKg: number;
+  avgMSConsumptionPerHeadPerDay: number;
+  avgNutritionalCostPerHeadPerDay: number;
+
+  // Resultados
+  arrobasInitial: number;
+  arrobasFinal: number;
+  arrobasProduced: number;
+  gmd: number;
+  gdc: number;
+  biologicalEfficiency: number;
+  costPerArrobaProduced: number;
+  revenuePerHead: number;
+  totalExpensePerHead: number;
+  profitPerHead: number;
+  profitabilityPeriodPercent: number;
+  profitabilityMonthlyPercent: number;
+
+  notes?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}

@@ -18,6 +18,7 @@ import {
   DailyFeedRecord,
   MovementType,
   Category,
+  Closing,
 } from './types';
 import { DEFAULT_CONFIG } from './constants';
 import {
@@ -52,6 +53,8 @@ import {
   feedRecordFromDb,
   configFromDb,
   configToDb,
+  closingToDb,
+  closingFromDb,
 } from './lib/dbMappers';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 
@@ -101,6 +104,11 @@ interface AppContextType {
   feedHistory: DailyFeedRecord[];
   addFeedRecord: (record: DailyFeedRecord) => Promise<void>;
   deleteFeedRecord: (id: string) => Promise<void>;
+
+  // Fechamentos
+  closings: Closing[];
+  upsertClosing: (closing: Closing) => Promise<void>;
+  deleteClosing: (id: string) => Promise<void>;
 
   // Helpers
   getActiveHeadCount: (lotId: string, asOfDate?: string) => number;
@@ -167,6 +175,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [movements, setMovements] = useState<AnimalMovement[]>([]);
   const [feedHistory, setFeedHistory] = useState<DailyFeedRecord[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [closings, setClosings] = useState<Closing[]>([]);
 
   // ----- Auth bootstrap (lê localStorage + carrega usuários disponíveis) -----
   const refreshAvailableUsers = useCallback(async () => {
@@ -219,6 +228,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setCategories([]);
       setMovements([]);
       setFeedHistory([]);
+      setClosings([]);
       setConfig(DEFAULT_CONFIG);
       return;
     }
@@ -236,6 +246,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         catsRes,
         movsRes,
         feedRes,
+        closingsRes,
       ] = await Promise.all([
         supabase.from('fc_config').select('*').eq('id', 'global').maybeSingle(),
         supabase.from('fc_lots').select('*'),
@@ -245,6 +256,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         supabase.from('fc_categories').select('*'),
         supabase.from('fc_movements').select('*').order('date', { ascending: false }),
         supabase.from('fc_feed_records').select('*').order('date', { ascending: false }),
+        supabase.from('fc_closings').select('*').order('closing_date', { ascending: false }),
       ]);
 
       if (cancelled) return;
@@ -262,6 +274,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setMovements(movsRes.data.map((r) => movementFromDb(r as Record<string, unknown>)));
       if (feedRes.data)
         setFeedHistory(feedRes.data.map((r) => feedRecordFromDb(r as Record<string, unknown>)));
+      if (closingsRes.data)
+        setClosings(closingsRes.data.map((r) => closingFromDb(r as Record<string, unknown>)));
 
       // 2. Subscriptions granulares (cada uma só atualiza seu próprio state)
       const channels: RealtimeChannel[] = [
@@ -272,6 +286,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         subscribeToTable<Category>('fc_categories', setCategories, categoryFromDb),
         subscribeToTable<AnimalMovement>('fc_movements', setMovements, movementFromDb),
         subscribeToTable<DailyFeedRecord>('fc_feed_records', setFeedHistory, feedRecordFromDb),
+        subscribeToTable<Closing>('fc_closings', setClosings, closingFromDb),
       ];
 
       // Config é singleton — listener separado
@@ -549,6 +564,29 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setFeedHistory(prev => prev.filter(r => r.id !== id));
   };
 
+  // ----- Closings -----
+  const upsertClosing = async (closing: Closing) => {
+    const { error } = await supabase
+      .from('fc_closings')
+      .upsert(closingToDb(closing), { onConflict: 'id' });
+    if (error) throw error;
+    setClosings((prev) => {
+      const idx = prev.findIndex((c) => c.id === closing.id);
+      if (idx >= 0) {
+        const n = [...prev];
+        n[idx] = closing;
+        return n;
+      }
+      return [closing, ...prev];
+    });
+  };
+
+  const deleteClosing = async (id: string) => {
+    const { error } = await supabase.from('fc_closings').delete().eq('id', id);
+    if (error) throw error;
+    setClosings((prev) => prev.filter((c) => c.id !== id));
+  };
+
   // ----- GMD Curves (within config) -----
   const deleteGMDCurve = async (id: string) => {
     const newCurves = config.gmdCurves.filter((c) => c.id !== id);
@@ -772,6 +810,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         feedHistory,
         addFeedRecord,
         deleteFeedRecord,
+        closings,
+        upsertClosing,
+        deleteClosing,
         getActiveHeadCount,
         getPenOccupancy,
         deleteLot,
