@@ -15,9 +15,11 @@ import {
 import { Calendar, Save, AlertCircle, CheckCircle, Calculator, Info, FileDown, Loader2, Copy } from 'lucide-react';
 import { generateFichaTratoPDF } from '../utils/pdfGenerator';
 import { useSessionState } from '../lib/useSessionState';
+import PenReorderControls from './PenReorderControls';
 
 interface SheetEntry {
   lotId: string;
+  penId?: string;
   penName: string;
   headCount: number;
   dietName: string;
@@ -129,6 +131,36 @@ const FeedSheet: React.FC = () => {
     return calculateAllHeadCounts(lots, movements, selectedDate);
   }, [lots, movements, selectedDate]);
 
+  // Helpers pra reordenação manual de baias:
+  // - sortedPenIds: ordem global das baias (mesma do sortLotsByPen)
+  // - firstOfPenLotIds: pra cada baia, qual o lotId que aparece primeiro (= onde mostrar os botões)
+  // - isFirstPen / isLastPen: pra saber se desabilita ↑ ou ↓
+  const penReorderHelpers = useMemo(() => {
+    const uniquePens: string[] = [];
+    const firstOfPenLotIds = new Set<string>();
+    for (const e of entries) {
+      const pid = e.penId || '';
+      if (!pid) continue;
+      if (!uniquePens.includes(pid)) {
+        uniquePens.push(pid);
+        firstOfPenLotIds.add(e.lotId);
+      }
+    }
+    return { uniquePens, firstOfPenLotIds };
+  }, [entries]);
+
+  const getPenReorderInfo = (entry: SheetEntry) => {
+    const pid = entry.penId || '';
+    const showControls = pid && penReorderHelpers.firstOfPenLotIds.has(entry.lotId);
+    const idx = penReorderHelpers.uniquePens.indexOf(pid);
+    return {
+      showControls,
+      isFirst: idx === 0,
+      isLast: idx === penReorderHelpers.uniquePens.length - 1,
+      penId: pid,
+    };
+  };
+
   // Initialize/Refresh Entries when Date or Dependencies change
   useEffect(() => {
     // Determine active lots, sorted by pen name (natural numeric/alphabetic)
@@ -183,6 +215,7 @@ const FeedSheet: React.FC = () => {
 
         return {
           lotId: lot.id,
+          penId: lot.currentPenId,
           penName: pen?.name || '?',
           headCount: existingRecord.headCount, // Use snapshot from record
           dietName: diet?.name || '?',
@@ -205,6 +238,7 @@ const FeedSheet: React.FC = () => {
       if (draft) {
         return {
           lotId: lot.id,
+          penId: lot.currentPenId,
           penName: pen?.name || '?',
           headCount: heads,
           dietName: diet?.name || '?',
@@ -228,6 +262,7 @@ const FeedSheet: React.FC = () => {
 
       return {
         lotId: lot.id,
+        penId: lot.currentPenId,
         penName: pen?.name || '?',
         headCount: heads,
         dietName: diet?.name || '?',
@@ -863,7 +898,20 @@ const FeedSheet: React.FC = () => {
                 return (
                   <tr key={entry.lotId} className="hover:bg-slate-50 transition-colors">
                     <td className="px-4 py-4">
-                      <div className="font-bold text-slate-900">{entry.penName}</div>
+                      <div className="flex items-center gap-1.5">
+                        {(() => {
+                          const info = getPenReorderInfo(entry);
+                          return info.showControls && info.penId ? (
+                            <PenReorderControls
+                              penId={info.penId}
+                              isFirst={info.isFirst}
+                              isLast={info.isLast}
+                              compact
+                            />
+                          ) : null;
+                        })()}
+                        <div className="font-bold text-slate-900">{entry.penName}</div>
+                      </div>
                       <div className="text-xs text-slate-500 flex items-center gap-1">
                         Lote {entry.lotId.toUpperCase()} • {entry.headCount} cab
                         {entry.headCount === 0 && <span className="text-red-500 font-bold">(Vazio)</span>}
@@ -1073,6 +1121,17 @@ const FeedSheet: React.FC = () => {
               <div className="p-3 bg-slate-50 flex items-center justify-between border-b">
                 <div>
                   <div className="flex items-center gap-2">
+                    {(() => {
+                      const info = getPenReorderInfo(entry);
+                      return info.showControls && info.penId ? (
+                        <PenReorderControls
+                          penId={info.penId}
+                          isFirst={info.isFirst}
+                          isLast={info.isLast}
+                          compact
+                        />
+                      ) : null;
+                    })()}
                     <div className="bg-emerald-600 text-white px-2 py-0.5 rounded text-[10px] font-black">{entry.penName}</div>
                     <div className="font-bold text-slate-900 text-sm">{entry.lotId.toUpperCase()}</div>
                   </div>

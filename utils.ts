@@ -224,18 +224,46 @@ export const compareNatural = (a: string, b: string): number => {
   return (a || '').localeCompare(b || '', 'pt-BR', { numeric: true, sensitivity: 'base' });
 };
 
-/** Ordena lotes pela baia atual (natural), depois pelo nome do lote */
+/**
+ * Ordena lotes pelo `displayOrder` da baia (se manual, > 0), depois natural por nome.
+ * Lotes na mesma baia ordenam pelo nome do lote.
+ */
 export const sortLotsByPen = <T extends { currentPenId?: string; name: string }>(
   lots: T[],
-  pens: { id: string; name: string }[]
+  pens: { id: string; name: string; displayOrder?: number }[]
 ): T[] => {
-  const penNameById: Record<string, string> = {};
-  for (const p of pens) penNameById[p.id] = p.name;
+  const penMapInfo: Record<string, { name: string; order: number }> = {};
+  for (const p of pens) {
+    penMapInfo[p.id] = { name: p.name, order: p.displayOrder || 0 };
+  }
   return [...lots].sort((a, b) => {
-    const penA = a.currentPenId ? penNameById[a.currentPenId] || '' : '';
-    const penB = b.currentPenId ? penNameById[b.currentPenId] || '' : '';
-    const byPen = compareNatural(penA, penB);
+    const penA = a.currentPenId ? penMapInfo[a.currentPenId] : null;
+    const penB = b.currentPenId ? penMapInfo[b.currentPenId] : null;
+
+    // 1) Se ambos têm displayOrder > 0, ordena por ele
+    const orderA = penA?.order || 0;
+    const orderB = penB?.order || 0;
+    if (orderA > 0 && orderB > 0 && orderA !== orderB) return orderA - orderB;
+    if (orderA > 0 && orderB === 0) return -1; // manuais vêm antes dos naturais
+    if (orderA === 0 && orderB > 0) return 1;
+
+    // 2) Fallback: ordem natural por nome da baia
+    const byPen = compareNatural(penA?.name || '', penB?.name || '');
     if (byPen !== 0) return byPen;
+
+    // 3) Mesma baia: ordena pelo nome do lote
+    return compareNatural(a.name, b.name);
+  });
+};
+
+/** Ordena baias diretamente pela ordem (displayOrder ASC + fallback natural). */
+export const sortPens = <T extends { name: string; displayOrder?: number }>(pens: T[]): T[] => {
+  return [...pens].sort((a, b) => {
+    const oA = a.displayOrder || 0;
+    const oB = b.displayOrder || 0;
+    if (oA > 0 && oB > 0 && oA !== oB) return oA - oB;
+    if (oA > 0 && oB === 0) return -1;
+    if (oA === 0 && oB > 0) return 1;
     return compareNatural(a.name, b.name);
   });
 };

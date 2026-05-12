@@ -82,6 +82,11 @@ interface AppContextType {
   pens: Pen[];
   addPen: (pen: Pen) => Promise<void>;
   removePen: (id: string) => Promise<void>;
+  /**
+   * Move uma baia pra cima/baixo na ordem global de exibição.
+   * Recalcula displayOrder das duas baias afetadas.
+   */
+  movePen: (id: string, direction: 'up' | 'down') => Promise<void>;
 
   categories: Category[];
   addCategory: (cat: Category) => Promise<void>;
@@ -457,6 +462,60 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (error) throw error;
   };
 
+  /**
+   * Move uma baia pra cima/baixo na ordem global de exibição.
+   * Estratégia: garantir que TODAS as baias tenham displayOrder > 0 (renumera se necessário),
+   * depois trocar com o vizinho imediato.
+   */
+  const movePen = async (id: string, direction: 'up' | 'down') => {
+    // 1. Calcula a ordem atual de todas as baias (usando o mesmo critério do sortPens)
+    const sorted = [...pens].sort((a, b) => {
+      const oA = a.displayOrder || 0;
+      const oB = b.displayOrder || 0;
+      if (oA > 0 && oB > 0 && oA !== oB) return oA - oB;
+      if (oA > 0 && oB === 0) return -1;
+      if (oA === 0 && oB > 0) return 1;
+      return (a.name || '').localeCompare(b.name || '', 'pt-BR', { numeric: true, sensitivity: 'base' });
+    });
+
+    const idx = sorted.findIndex((p) => p.id === id);
+    if (idx === -1) return;
+    const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
+    if (targetIdx < 0 || targetIdx >= sorted.length) return;
+
+    // 2. Normaliza: atribui displayOrder = (índice+1) * 10 pra todas as baias
+    //    (espaçamento de 10 pra futuros inserts intermediários)
+    const renumbered = sorted.map((p, i) => ({ ...p, displayOrder: (i + 1) * 10 }));
+
+    // 3. Faz o swap
+    [renumbered[idx], renumbered[targetIdx]] = [renumbered[targetIdx], renumbered[idx]];
+    // re-atribui displayOrder pelos novos índices
+    const final = renumbered.map((p, i) => ({ ...p, displayOrder: (i + 1) * 10 }));
+
+    // 4. Optimistic update local primeiro
+    setPens(final);
+
+    // 5. Persiste no banco — só atualiza as baias cujo order mudou
+    const updatesToWrite = final.filter((p) => {
+      const original = pens.find((op) => op.id === p.id);
+      return (original?.displayOrder || 0) !== p.displayOrder;
+    });
+
+    for (const p of updatesToWrite) {
+      const { error } = await supabase
+        .from('fc_pens')
+        .update({ display_order: p.displayOrder })
+        .eq('id', p.id);
+      if (error) {
+        console.error('[movePen] erro ao persistir:', error);
+        // Em caso de erro, reverte recarregando
+        const { data } = await supabase.from('fc_pens').select('*');
+        if (data) setPens(data.map((r) => penFromDb(r as Record<string, unknown>)));
+        throw error;
+      }
+    }
+  };
+
   // ----- Categories -----
   const addCategory = async (cat: Category) => {
     const { error } = await supabase.from('fc_categories').insert(categoryToDb(cat));
@@ -793,6 +852,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         pens,
         addPen,
         removePen,
+        movePen,
         categories,
         addCategory,
         deleteCategory,

@@ -63,6 +63,8 @@ export interface Pen {
   name: string;
   moduleId: string;
   capacity: number;
+  /** Ordem manual para exibição nas telas. 0 = usa ordem natural por nome. */
+  displayOrder?: number;
 }
 
 export interface DietHistoryEntry {

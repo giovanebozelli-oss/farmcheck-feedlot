@@ -9,8 +9,10 @@ import {
 } from '../utils';
 import { Closing, Lot } from '../types';
 import {
-  Beef, Calculator, ChevronRight, CircleDollarSign, History, Save, X, ScrollText,
+  Beef, Calculator, ChevronRight, CircleDollarSign, History, Save, X, ScrollText, FileDown, FileText,
 } from 'lucide-react';
+import { generateFechamentoPDF, FechamentoExportData } from '../utils/pdfGenerator';
+import { generateFechamentoExcel } from '../utils/excelGenerator';
 
 interface Props {
   analysisDate: string;
@@ -162,7 +164,7 @@ const ClosingPanel: React.FC<{
   onSave: (closing: Closing, alsoCloseLot: boolean) => Promise<void>;
   onDelete: () => Promise<void>;
 }> = ({ lot, analysisDate, headCounts, existingClosing, onSave, onDelete }) => {
-  const { config, feedHistory, getActiveHeadCount } = useAppStore();
+  const { config, feedHistory, getActiveHeadCount, pens } = useAppStore();
 
   // Dados do sistema
   const daysOnFeed = calculateDaysOnFeed(lot.entryDate, analysisDate) || 0;
@@ -409,21 +411,128 @@ const ClosingPanel: React.FC<{
       </div>
 
       {/* Botões */}
-      <div className="flex gap-2 justify-end">
-        {existingClosing && (
+      <div className="flex flex-wrap gap-2 justify-between">
+        <div className="flex gap-2">
+          {/* Exportar (sempre disponível com os dados atuais em memória) */}
           <button
-            onClick={onDelete}
-            className="px-4 py-2 rounded-lg border-2 border-rose-200 text-rose-600 font-bold text-sm hover:bg-rose-50 flex items-center gap-2"
+            onClick={() => {
+              const pen = pens.find((p) => p.id === lot.currentPenId);
+              const exportData: FechamentoExportData = {
+                lotName: lot.name,
+                penName: pen?.name || '-',
+                entryDate: lot.entryDate,
+                closingDate: existingClosing?.closingDate || analysisDate,
+                daysOnFeed,
+                initialWeightKg: lot.initialWeight,
+                avgMSConsumptionPerHeadPerDay: avgMSConsumption,
+                avgNutritionalCostPerHeadPerDay: avgNutritionalCost,
+                headsSlaughtered,
+                initialYieldPercent: yieldPercent,
+                purchasePricePerHead: purchasePrice,
+                salePricePerArroba: salePrice,
+                finalLiveWeightKg: finalLiveWeight || undefined,
+                carcassWeightKg: carcassWeightKg || undefined,
+                carcassWeightArroba: carcassWeightArroba || undefined,
+                operationalCostPerHeadPerDay: opCost,
+                taxesPerHead: taxes,
+                arrobasInitial: results.arrobasInitial,
+                arrobasFinal: results.arrobasFinal,
+                arrobasProduced: results.arrobasProduced,
+                gmd: results.gmd,
+                gdc: results.gdc,
+                biologicalEfficiency: results.biologicalEfficiency,
+                costPerArrobaProduced: results.costPerArrobaProduced,
+                yieldEstimated: results.yieldEstimated,
+                msConsumptionTotalPerHead: results.msConsumptionTotalPerHead,
+                nutritionalCostTotalPerHead: results.nutritionalCostTotalPerHead,
+                operationalCostTotalPerHead: results.operationalCostTotalPerHead,
+                revenuePerHead: results.revenuePerHead,
+                totalExpensePerHead: results.totalExpensePerHead,
+                profitPerHead: results.profitPerHead,
+                profitabilityPeriodPercent: results.profitabilityPeriodPercent,
+                profitabilityMonthlyPercent: results.profitabilityMonthlyPercent,
+                notes,
+              };
+              try {
+                generateFechamentoPDF(exportData);
+              } catch (err) {
+                console.error('[generateFechamentoPDF]', err);
+                alert('Erro ao gerar PDF. Veja o console (F12).');
+              }
+            }}
+            className="px-4 py-2 rounded-lg border-2 border-slate-300 text-slate-700 font-bold text-sm hover:bg-slate-50 flex items-center gap-2"
+            title="Exportar PDF do fechamento"
           >
-            <X size={16} /> Excluir Fechamento
+            <FileDown size={16} /> PDF
           </button>
-        )}
-        <button
-          onClick={handleSave}
-          className="px-5 py-2 rounded-lg bg-emerald-600 text-white font-bold text-sm hover:bg-emerald-700 flex items-center gap-2"
-        >
-          <Save size={16} /> {existingClosing ? 'Atualizar Fechamento' : 'Salvar Fechamento'}
-        </button>
+          <button
+            onClick={() => {
+              const pen = pens.find((p) => p.id === lot.currentPenId);
+              try {
+                generateFechamentoExcel({
+                  lotName: lot.name,
+                  penName: pen?.name || '-',
+                  entryDate: lot.entryDate,
+                  closingDate: existingClosing?.closingDate || analysisDate,
+                  daysOnFeed,
+                  initialWeightKg: lot.initialWeight,
+                  avgMSConsumptionPerHeadPerDay: avgMSConsumption,
+                  avgNutritionalCostPerHeadPerDay: avgNutritionalCost,
+                  headsSlaughtered,
+                  initialYieldPercent: yieldPercent,
+                  purchasePricePerHead: purchasePrice,
+                  salePricePerArroba: salePrice,
+                  finalLiveWeightKg: finalLiveWeight || undefined,
+                  carcassWeightKg: carcassWeightKg || undefined,
+                  carcassWeightArroba: carcassWeightArroba || undefined,
+                  operationalCostPerHeadPerDay: opCost,
+                  taxesPerHead: taxes,
+                  arrobasInitial: results.arrobasInitial,
+                  arrobasFinal: results.arrobasFinal,
+                  arrobasProduced: results.arrobasProduced,
+                  gmd: results.gmd,
+                  gdc: results.gdc,
+                  biologicalEfficiency: results.biologicalEfficiency,
+                  costPerArrobaProduced: results.costPerArrobaProduced,
+                  yieldEstimated: results.yieldEstimated,
+                  msConsumptionTotalPerHead: results.msConsumptionTotalPerHead,
+                  nutritionalCostTotalPerHead: results.nutritionalCostTotalPerHead,
+                  operationalCostTotalPerHead: results.operationalCostTotalPerHead,
+                  revenuePerHead: results.revenuePerHead,
+                  totalExpensePerHead: results.totalExpensePerHead,
+                  profitPerHead: results.profitPerHead,
+                  profitabilityPeriodPercent: results.profitabilityPeriodPercent,
+                  profitabilityMonthlyPercent: results.profitabilityMonthlyPercent,
+                  notes,
+                });
+              } catch (err) {
+                console.error('[generateFechamentoExcel]', err);
+                alert('Erro ao gerar Excel. Veja o console (F12).');
+              }
+            }}
+            className="px-4 py-2 rounded-lg border-2 border-slate-300 text-slate-700 font-bold text-sm hover:bg-slate-50 flex items-center gap-2"
+            title="Exportar Excel do fechamento"
+          >
+            <FileText size={16} /> Excel
+          </button>
+        </div>
+
+        <div className="flex gap-2">
+          {existingClosing && (
+            <button
+              onClick={onDelete}
+              className="px-4 py-2 rounded-lg border-2 border-rose-200 text-rose-600 font-bold text-sm hover:bg-rose-50 flex items-center gap-2"
+            >
+              <X size={16} /> Excluir Fechamento
+            </button>
+          )}
+          <button
+            onClick={handleSave}
+            className="px-5 py-2 rounded-lg bg-emerald-600 text-white font-bold text-sm hover:bg-emerald-700 flex items-center gap-2"
+          >
+            <Save size={16} /> {existingClosing ? 'Atualizar Fechamento' : 'Salvar Fechamento'}
+          </button>
+        </div>
       </div>
     </div>
   );

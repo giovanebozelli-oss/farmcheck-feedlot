@@ -3,11 +3,12 @@ import React, { useState } from 'react';
 import { useAppStore } from '../context';
 import { calculateDaysOnFeed, calculateProjectedWeight, formatCurrency, calculateAllHeadCounts, sortLotsByPen } from '../utils';
 import { FileDown, FileText, Lock, Unlock, X, TrendingUp, ChevronRight, Trash2, Wheat, Edit2 } from 'lucide-react';
-import { generateZootecnicoPDF, generateInsumosPDF, generateLancamentosTratosPDF, generateLancamentosMovimentosPDF } from '../utils/pdfGenerator';
-import { generateZootecnicoExcel, generateInsumosExcel, generateLancamentosTratosExcel, generateLancamentosMovimentosExcel } from '../utils/excelGenerator';
+import { generateZootecnicoPDF, generateInsumosPDF, generateLancamentosTratosPDF, generateLancamentosMovimentosPDF, generateFechamentoConsolidadoPDF, FechamentoConsolidadoRow } from '../utils/pdfGenerator';
+import { generateZootecnicoExcel, generateInsumosExcel, generateLancamentosTratosExcel, generateLancamentosMovimentosExcel, generateFechamentoConsolidadoExcel } from '../utils/excelGenerator';
 import { MovementType, Lot, Pen, Diet, Ingredient, DailyFeedRecord } from '../types';
 import { useSessionState } from '../lib/useSessionState';
 import FechamentoFinanceiro from './FechamentoFinanceiro';
+import PenReorderControls from './PenReorderControls';
 import { 
   XAxis, 
   YAxis, 
@@ -90,7 +91,7 @@ function computeInsumosUsage(
 }
 
 const Reports: React.FC = () => {
-  const { lots, pens, diets, feedHistory, ingredients, categories, movements, deleteFeedRecord, deleteMovement, config } = useAppStore();
+  const { lots, pens, diets, feedHistory, ingredients, categories, movements, deleteFeedRecord, deleteMovement, config, closings } = useAppStore();
   const [activeTab, setActiveTab] = useSessionState<'zootecnico' | 'fechamento' | 'insumos' | 'registros'>('reports.activeTab', 'zootecnico');
   const [selectedLotId, setSelectedLotId] = useSessionState<string | null>('reports.selectedLotId', null);
   const [selectedPenId, setSelectedPenId] = useSessionState<string | null>('reports.selectedPenId', null);
@@ -296,6 +297,33 @@ const Reports: React.FC = () => {
 
   const [showExportOptions, setShowExportOptions] = useState(false);
 
+  // Helper de reordenação: pra cada row, saber se é primeira linha de sua baia
+  const zootecnicoPenReorder = React.useMemo(() => {
+    const uniquePens: string[] = [];
+    const firstLotIdByPen = new Set<string>();
+    for (const row of zootecnicoData) {
+      const pid = row.penId || '';
+      if (!pid) continue;
+      if (!uniquePens.includes(pid)) {
+        uniquePens.push(pid);
+        firstLotIdByPen.add(row.lotId);
+      }
+    }
+    return { uniquePens, firstLotIdByPen };
+  }, [zootecnicoData]);
+
+  const getZootecnicoPenReorderInfo = (row: { lotId: string; penId?: string }) => {
+    const pid = row.penId || '';
+    const showControls = pid && zootecnicoPenReorder.firstLotIdByPen.has(row.lotId);
+    const idx = zootecnicoPenReorder.uniquePens.indexOf(pid);
+    return {
+      showControls,
+      isFirst: idx === 0,
+      isLast: idx === zootecnicoPenReorder.uniquePens.length - 1,
+      penId: pid,
+    };
+  };
+
   // Calcula dados de insumos pro filtro atual (compartilhado com a aba Insumos)
   const insumosUsageData = React.useMemo(
     () => computeInsumosUsage(feedHistory, diets, ingredients, startDate, endDate, insumosLotFilter || undefined),
@@ -358,6 +386,30 @@ const Reports: React.FC = () => {
       });
   };
 
+  // Constrói as linhas de Fechamento Consolidado (todos os lotes com closing salvo)
+  const buildFechamentoConsolidadoRows = (): FechamentoConsolidadoRow[] => {
+    return closings.map((c) => {
+      const lot = lots.find((l) => l.id === c.lotId);
+      const pen = pens.find((p) => p.id === lot?.currentPenId);
+      return {
+        lotName: lot?.name || c.lotId,
+        penName: pen?.name || '-',
+        closingDate: c.closingDate,
+        heads: c.headsSlaughtered || 0,
+        daysOnFeed: c.daysOnFeed || 0,
+        gmd: c.gmd || 0,
+        gdc: c.gdc || 0,
+        arrobasProduced: c.arrobasProduced || 0,
+        costPerArrobaProduced: c.costPerArrobaProduced || 0,
+        revenuePerHead: c.revenuePerHead || 0,
+        totalExpensePerHead: c.totalExpensePerHead || 0,
+        profitPerHead: c.profitPerHead || 0,
+        profitabilityPeriodPercent: c.profitabilityPeriodPercent || 0,
+        profitabilityMonthlyPercent: c.profitabilityMonthlyPercent || 0,
+      };
+    });
+  };
+
   const handleExportPDF = () => {
     setShowExportOptions(false);
     try {
@@ -386,7 +438,18 @@ const Reports: React.FC = () => {
           : undefined;
         generateInsumosPDF(insumosUsageData, startDate, endDate, lotName);
       } else if (activeTab === 'fechamento') {
-        alert('Use o botão de exportar dentro do card do lote para gerar o fechamento individual.');
+        // Botão geral em Fechamento → exporta CONSOLIDADO de todos os lotes com closing
+        // (pra exportar lote individual, usar os botões PDF/Excel DENTRO do card do lote)
+        const rows = buildFechamentoConsolidadoRows();
+        if (rows.length === 0) {
+          alert(
+            'Nenhum fechamento salvo ainda.\n\n' +
+            'Pra gerar o consolidado, salve pelo menos 1 fechamento antes (botão "Salvar Fechamento" no card de cada lote).\n\n' +
+            'Pra exportar APENAS o lote atualmente selecionado, use os botões PDF/Excel dentro do card.'
+          );
+          return;
+        }
+        generateFechamentoConsolidadoPDF(rows);
       } else if (activeTab === 'registros') {
         // #Bug — exportar lançamentos (tratos ou movimentos)
         if (lancamentosSubTab === 'tratos') {
@@ -442,7 +505,16 @@ const Reports: React.FC = () => {
           : undefined;
         generateInsumosExcel(insumosUsageData, startDate, endDate, lotName);
       } else if (activeTab === 'fechamento') {
-        alert('Use o botão de exportar dentro do card do lote para gerar o fechamento individual.');
+        const rows = buildFechamentoConsolidadoRows();
+        if (rows.length === 0) {
+          alert(
+            'Nenhum fechamento salvo ainda.\n\n' +
+            'Pra gerar o consolidado, salve pelo menos 1 fechamento antes.\n\n' +
+            'Pra exportar APENAS o lote selecionado, use os botões dentro do card.'
+          );
+          return;
+        }
+        generateFechamentoConsolidadoExcel(rows);
       } else if (activeTab === 'registros') {
         // #Bug — exportar lançamentos (tratos ou movimentos) em Excel
         if (lancamentosSubTab === 'tratos') {
@@ -617,6 +689,19 @@ const Reports: React.FC = () => {
                       >
                         <td className="px-4 py-4 sticky left-0 bg-white font-bold text-slate-900 border-r group-hover:bg-emerald-50 transition-colors">
                           <div className="flex items-center gap-2">
+                             {(() => {
+                               const info = getZootecnicoPenReorderInfo(row);
+                               return info.showControls && info.penId ? (
+                                 <div onClick={(e) => e.stopPropagation()}>
+                                   <PenReorderControls
+                                     penId={info.penId}
+                                     isFirst={info.isFirst}
+                                     isLast={info.isLast}
+                                     compact
+                                   />
+                                 </div>
+                               ) : null;
+                             })()}
                              <div 
                                onClick={(e) => {
                                  e.stopPropagation();

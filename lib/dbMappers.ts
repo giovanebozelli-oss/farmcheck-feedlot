@@ -88,6 +88,7 @@ const penMap: Mapping = {
   name: 'name',
   moduleId: 'module_id',
   capacity: 'capacity',
+  displayOrder: 'display_order',
 };
 export const penToDb = (pen: Partial<Pen>) => objToDb<Pen>(pen, penMap);
 export const penFromDb = (row: Record<string, unknown>) => dbToObj<Pen>(row, penMap);
