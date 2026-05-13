@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
@@ -9,6 +8,7 @@ import Settings from './components/Settings';
 import AnimalMovementPage from './components/AnimalMovement';
 import LotDatabase from './components/LotDatabase';
 import Nutrition from './components/Nutrition';
+import UserManagement from './components/UserManagement';
 import { AppProvider } from './context';
 
 const App: React.FC = () => {
@@ -23,6 +23,7 @@ const App: React.FC = () => {
             <Route path="nutrition" element={<Nutrition />} />
             <Route path="movements" element={<AnimalMovementPage />} />
             <Route path="reports" element={<Reports />} />
+            <Route path="users" element={<UserManagement />} />
             <Route path="settings" element={<Settings />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>

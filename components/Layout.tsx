@@ -12,10 +12,11 @@ import {
   LogOut,
   Database,
   Wheat,
-  Delete
+  Users
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore } from '../context';
+import AuthScreen from './AuthScreen';
 
 const Logo: React.FC<{ className?: string, variant?: 'sidebar' | 'login' }> = ({ className, variant = 'sidebar' }) => {
   const isLogin = variant === 'login';
@@ -44,7 +45,7 @@ const Logo: React.FC<{ className?: string, variant?: 'sidebar' | 'login' }> = ({
 
 const Layout: React.FC = () => {
   const [isSidebarOpen, setSidebarOpen] = React.useState(false);
-  const { user, availableUsers, loginWithPin, logout, authLoading } = useAppStore();
+  const { user, signIn, signUp, logout, authLoading } = useAppStore();
   const location = useLocation();
 
   const [isOnline, setIsOnline] = React.useState(navigator.onLine);
@@ -78,18 +79,21 @@ const Layout: React.FC = () => {
   }
 
   if (!user) {
-    return <LoginScreen availableUsers={availableUsers} loginWithPin={loginWithPin} />;
+    return <AuthScreen onSignIn={signIn} onSignUp={signUp} />;
   }
 
+  const isAdmin = user.role === 'admin';
+
   const navItems = [
-    { to: "/", icon: <LayoutDashboard size={20} />, label: "Dashboard" },
-    { to: "/feed", icon: <ClipboardList size={20} />, label: "Ficha de Trato" },
-    { to: "/database", icon: <Database size={20} />, label: "Banco de Dados" },
-    { to: "/nutrition", icon: <Wheat size={20} />, label: "Nutrição" },
-    { to: "/movements", icon: <ArrowRightLeft size={20} />, label: "Movimentação de Rebanho" },
-    { to: "/reports", icon: <FileText size={20} />, label: "Relatório Zootécnico" },
-    { to: "/settings", icon: <Settings size={20} />, label: "Estrutura & Parâmetros" },
-  ];
+    { to: "/", icon: <LayoutDashboard size={20} />, label: "Dashboard", adminOnly: false },
+    { to: "/feed", icon: <ClipboardList size={20} />, label: "Ficha de Trato", adminOnly: false },
+    { to: "/database", icon: <Database size={20} />, label: "Banco de Dados", adminOnly: false },
+    { to: "/nutrition", icon: <Wheat size={20} />, label: "Nutrição", adminOnly: false },
+    { to: "/movements", icon: <ArrowRightLeft size={20} />, label: "Movimentação de Rebanho", adminOnly: false },
+    { to: "/reports", icon: <FileText size={20} />, label: "Relatório Zootécnico", adminOnly: false },
+    { to: "/users", icon: <Users size={20} />, label: "Usuários", adminOnly: true },
+    { to: "/settings", icon: <Settings size={20} />, label: "Estrutura & Parâmetros", adminOnly: false },
+  ].filter(item => !item.adminOnly || isAdmin);
 
   return (
     <div className="flex h-screen bg-slate-100 overflow-hidden text-slate-900 font-sans">
@@ -146,18 +150,14 @@ const Layout: React.FC = () => {
         <div className="p-4 border-t border-slate-800 m-4 bg-slate-800/50 rounded-2xl">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-3 overflow-hidden">
-              {user.photoUrl ? (
-                <img src={user.photoUrl} alt={user.name} className="w-10 h-10 rounded-xl border-2 border-emerald-500 object-cover" />
-              ) : (
-                <div className="w-10 h-10 rounded-xl bg-slate-700 flex items-center justify-center font-bold text-slate-300 border border-slate-600">
-                  {user.name?.charAt(0) || 'U'}
-                </div>
-              )}
+              <div className="w-10 h-10 rounded-xl bg-emerald-600 flex items-center justify-center font-bold text-white border-2 border-emerald-500">
+                {user.name?.charAt(0).toUpperCase() || 'U'}
+              </div>
               <div className="overflow-hidden">
                 <p className="text-sm font-bold truncate leading-tight">{user.name || 'Usuário'}</p>
                 <p className={`text-[10px] font-bold uppercase tracking-tighter truncate opacity-80 flex items-center gap-1 ${isOnline ? 'text-emerald-500' : 'text-red-400'}`}>
                   <span className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-emerald-500' : 'bg-red-400'} animate-pulse`}></span>
-                  {isOnline ? 'Sistema On-line' : 'Modo Off-line'}
+                  {user.role === 'admin' ? 'Administrador' : 'Usuário'} · {isOnline ? 'On-line' : 'Off-line'}
                 </p>
               </div>
             </div>
@@ -235,190 +235,5 @@ const Layout: React.FC = () => {
   );
 };
 
-// =============================================================
-// Tela de Login — seleção de usuário + PIN
-// =============================================================
-interface LoginScreenProps {
-  availableUsers: { id: string; name: string; role: 'admin' | 'operator'; photoUrl?: string }[];
-  loginWithPin: (userId: string, pin: string) => Promise<boolean>;
-}
-
-const LoginScreen: React.FC<LoginScreenProps> = ({ availableUsers, loginWithPin }) => {
-  const [selectedUserId, setSelectedUserId] = React.useState<string | null>(null);
-  const [pin, setPin] = React.useState('');
-  const [error, setError] = React.useState('');
-  const [submitting, setSubmitting] = React.useState(false);
-
-  const selectedUser = availableUsers.find((u) => u.id === selectedUserId);
-  const PIN_LENGTH = 6;
-
-  const handleKey = async (key: string) => {
-    if (submitting) return;
-    if (key === 'del') {
-      setPin((p) => p.slice(0, -1));
-      setError('');
-      return;
-    }
-    if (pin.length >= PIN_LENGTH) return;
-    const newPin = pin + key;
-    setPin(newPin);
-    setError('');
-    if (newPin.length === PIN_LENGTH && selectedUserId) {
-      setSubmitting(true);
-      const ok = await loginWithPin(selectedUserId, newPin);
-      if (!ok) {
-        setError('PIN incorreto.');
-        setTimeout(() => {
-          setPin('');
-          setError('');
-          setSubmitting(false);
-        }, 800);
-      } else {
-        // sucesso — o context atualiza o user, layout renderiza
-        setSubmitting(false);
-      }
-    }
-  };
-
-  const back = () => {
-    setSelectedUserId(null);
-    setPin('');
-    setError('');
-  };
-
-  return (
-    <div className="h-screen w-screen flex flex-col items-center justify-center bg-[#001F3F] text-white p-4 relative overflow-hidden">
-      <div className="absolute inset-0 opacity-10 pointer-events-none">
-        <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-emerald-900/40 via-transparent to-transparent"></div>
-      </div>
-
-      <div className="relative z-10 w-full max-w-[92vw] sm:max-w-[420px] flex flex-col items-center bg-white/5 backdrop-blur-2xl p-6 sm:p-10 rounded-[2rem] sm:rounded-[3.5rem] border border-white/20 shadow-[0_48px_80px_-12px_rgba(0,0,0,0.6)]">
-        <Logo variant="login" className="mb-6 md:mb-10" />
-
-        <div className="text-center mb-6 md:mb-8">
-          <h2 className="text-emerald-500 font-black uppercase tracking-[0.4em] text-[11px] mb-2">
-            SISTEMA DE GESTÃO FEEDLOT
-          </h2>
-        </div>
-
-        {!selectedUser ? (
-          <div className="w-full">
-            <p className="text-slate-300 text-xs uppercase tracking-widest text-center mb-4">
-              Selecione seu perfil
-            </p>
-            {availableUsers.length === 0 ? (
-              <p className="text-center text-slate-400 text-sm py-6">
-                Nenhum usuário cadastrado.
-              </p>
-            ) : (
-              <div className="flex flex-col gap-2 w-full max-h-[40vh] overflow-y-auto">
-                {availableUsers.map((u) => (
-                  <button
-                    key={u.id}
-                    onClick={() => setSelectedUserId(u.id)}
-                    className="flex items-center gap-3 p-3 bg-white/5 hover:bg-white/15 border border-white/10 rounded-2xl transition-all text-left"
-                  >
-                    {u.photoUrl ? (
-                      <img src={u.photoUrl} alt={u.name} className="w-10 h-10 rounded-xl object-cover" />
-                    ) : (
-                      <div className="w-10 h-10 rounded-xl bg-emerald-600 flex items-center justify-center font-bold text-white">
-                        {u.name.charAt(0).toUpperCase()}
-                      </div>
-                    )}
-                    <div className="flex-1 overflow-hidden">
-                      <p className="text-sm font-semibold truncate">{u.name}</p>
-                      <p className="text-[10px] uppercase tracking-widest text-emerald-400">
-                        {u.role === 'admin' ? 'Administrador' : 'Operador'}
-                      </p>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="w-full flex flex-col items-center">
-            <button
-              onClick={back}
-              className="text-slate-400 hover:text-white text-xs mb-4 self-start"
-            >
-              ← Trocar usuário
-            </button>
-            <div className="flex items-center gap-3 mb-6">
-              {selectedUser.photoUrl ? (
-                <img src={selectedUser.photoUrl} alt={selectedUser.name} className="w-12 h-12 rounded-xl object-cover" />
-              ) : (
-                <div className="w-12 h-12 rounded-xl bg-emerald-600 flex items-center justify-center font-bold text-white text-lg">
-                  {selectedUser.name.charAt(0).toUpperCase()}
-                </div>
-              )}
-              <div>
-                <p className="text-base font-semibold">{selectedUser.name}</p>
-                <p className="text-[10px] uppercase tracking-widest text-emerald-400">
-                  {selectedUser.role === 'admin' ? 'Administrador' : 'Operador'}
-                </p>
-              </div>
-            </div>
-
-            <p className="text-slate-300 text-xs uppercase tracking-widest mb-3">
-              Digite seu PIN
-            </p>
-
-            <div className="flex gap-2 mb-4">
-              {Array.from({ length: PIN_LENGTH }).map((_, i) => (
-                <span
-                  key={i}
-                  className={`w-3 h-3 rounded-full transition-all ${
-                    error
-                      ? 'bg-red-500'
-                      : i < pin.length
-                      ? 'bg-emerald-500'
-                      : 'bg-white/20'
-                  }`}
-                />
-              ))}
-            </div>
-
-            {error && <p className="text-red-400 text-xs mb-3">{error}</p>}
-
-            <div className="grid grid-cols-3 gap-2 w-full max-w-[260px]">
-              {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => (
-                <button
-                  key={n}
-                  onClick={() => handleKey(String(n))}
-                  disabled={submitting}
-                  className="bg-white/8 hover:bg-white/16 border border-white/10 rounded-xl py-3 text-lg font-semibold transition-all active:scale-95 disabled:opacity-50"
-                >
-                  {n}
-                </button>
-              ))}
-              <div />
-              <button
-                onClick={() => handleKey('0')}
-                disabled={submitting}
-                className="bg-white/8 hover:bg-white/16 border border-white/10 rounded-xl py-3 text-lg font-semibold transition-all active:scale-95 disabled:opacity-50"
-              >
-                0
-              </button>
-              <button
-                onClick={() => handleKey('del')}
-                disabled={submitting}
-                className="bg-white/8 hover:bg-white/16 border border-white/10 rounded-xl py-3 flex items-center justify-center transition-all active:scale-95 disabled:opacity-50"
-              >
-                <Delete size={18} />
-              </button>
-            </div>
-          </div>
-        )}
-
-        <footer className="mt-8 text-center opacity-30">
-          <p className="text-[9px] font-black tracking-[0.4em] uppercase italic">
-            Official Nutrition Systems &copy; 2026
-          </p>
-        </footer>
-      </div>
-    </div>
-  );
-};
 
 export default Layout;

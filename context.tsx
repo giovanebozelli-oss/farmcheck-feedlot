@@ -31,10 +31,11 @@ import {
 } from './utils';
 import {
   supabase,
-  authStorage,
-  listActiveUsers,
-  validateUserPin,
-  FcAuthUser,
+  signInUser,
+  signUpUser,
+  signOutUser,
+  fetchProfile,
+  type UserProfile,
 } from './lib/supabase';
 import {
   lotToDb,
@@ -63,12 +64,12 @@ import type { RealtimeChannel } from '@supabase/supabase-js';
 // ----------------------------------------------------------------
 interface AppContextType {
   // Auth
-  user: FcAuthUser | null;
+  user: UserProfile | null;
   authLoading: boolean;
-  availableUsers: FcAuthUser[];
-  refreshAvailableUsers: () => Promise<void>;
-  loginWithPin: (userId: string, pin: string) => Promise<boolean>;
+  signIn: (email: string, password: string) => Promise<{ error?: string }>;
+  signUp: (params: { name: string; email: string; phone: string; password: string }) => Promise<{ error?: string }>;
   logout: () => Promise<void>;
+  refreshProfile: () => Promise<void>;
 
   // Config
   config: AppConfig;
@@ -167,9 +168,8 @@ function subscribeToTable<T extends { id: string }>(
 // ----------------------------------------------------------------
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   // Auth
-  const [user, setUser] = useState<FcAuthUser | null>(null);
+  const [user, setUser] = useState<UserProfile | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [availableUsers, setAvailableUsers] = useState<FcAuthUser[]>([]);
 
   // Domain data
   const [config, setConfig] = useState<AppConfig>(DEFAULT_CONFIG);
@@ -182,38 +182,82 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [categories, setCategories] = useState<Category[]>([]);
   const [closings, setClosings] = useState<Closing[]>([]);
 
-  // ----- Auth bootstrap (lê localStorage + carrega usuários disponíveis) -----
-  const refreshAvailableUsers = useCallback(async () => {
-    const list = await listActiveUsers();
-    setAvailableUsers(list);
+  // ----- Auth bootstrap: lê sessão do Supabase + subscreve mudanças -----
+  const refreshProfile = useCallback(async () => {
+    const { data } = await supabase.auth.getUser();
+    if (!data.user) {
+      setUser(null);
+      return;
+    }
+    const profile = await fetchProfile(data.user.id);
+    if (profile && profile.isBlocked) {
+      await signOutUser();
+      setUser(null);
+      alert('Sua conta foi bloqueada. Contate o administrador.');
+      return;
+    }
+    setUser(profile);
   }, []);
 
   useEffect(() => {
-    const stored = authStorage.get();
-    if (stored) setUser(stored);
-    refreshAvailableUsers().finally(() => setAuthLoading(false));
-  }, [refreshAvailableUsers]);
+    let mounted = true;
 
-  const loginWithPin = useCallback(async (userId: string, pin: string): Promise<boolean> => {
-    const ok = await validateUserPin(userId, pin);
-    if (!ok) return false;
-    const found = availableUsers.find((u) => u.id === userId);
-    if (!found) {
-      // garante refresh caso o usuário tenha sido cadastrado neste browser
-      const refreshed = await listActiveUsers();
-      const u = refreshed.find((x) => x.id === userId);
-      if (!u) return false;
-      authStorage.set(u);
-      setUser(u);
-      return true;
-    }
-    authStorage.set(found);
-    setUser(found);
-    return true;
-  }, [availableUsers]);
+    // 1) Lê sessão inicial
+    supabase.auth.getSession().then(async ({ data }) => {
+      if (!mounted) return;
+      if (data.session?.user) {
+        const profile = await fetchProfile(data.session.user.id);
+        if (profile && !profile.isBlocked) {
+          setUser(profile);
+        } else if (profile?.isBlocked) {
+          await signOutUser();
+        }
+      }
+      setAuthLoading(false);
+    });
+
+    // 2) Subscreve mudanças (signIn / signOut / token refresh)
+    const { data: subscription } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (!mounted) return;
+      if (event === 'SIGNED_OUT' || !session?.user) {
+        setUser(null);
+        return;
+      }
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
+        const profile = await fetchProfile(session.user.id);
+        if (profile && !profile.isBlocked) setUser(profile);
+        else if (profile?.isBlocked) {
+          await signOutUser();
+          setUser(null);
+        }
+      }
+    });
+
+    return () => {
+      mounted = false;
+      subscription.subscription.unsubscribe();
+    };
+  }, []);
+
+  const signIn = useCallback(async (email: string, password: string) => {
+    const result = await signInUser(email, password);
+    if (result.error) return { error: result.error };
+    if (result.profile) setUser(result.profile);
+    return {};
+  }, []);
+
+  const signUp = useCallback(async (params: { name: string; email: string; phone: string; password: string }) => {
+    const result = await signUpUser(params);
+    if (result.error) return { error: result.error };
+    // Após cadastro direto, faz login automático
+    const loginResult = await signInUser(params.email, params.password);
+    if (loginResult.error) return { error: loginResult.error };
+    if (loginResult.profile) setUser(loginResult.profile);
+    return {};
+  }, []);
 
   const logout = useCallback(async () => {
-    authStorage.clear();
+    await signOutUser();
     setUser(null);
   }, []);
 
@@ -840,9 +884,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       value={{
         user,
         authLoading,
-        availableUsers,
-        refreshAvailableUsers,
-        loginWithPin,
+        signIn,
+        signUp,
+        refreshProfile,
         logout,
         config,
         updateConfig,
