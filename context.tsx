@@ -214,27 +214,47 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
     }, 8000);
 
-    // 1) Lê sessão inicial — com try/catch pra nunca travar
+    // Resolve o profile FORA de qualquer lock do supabase-js.
+    // IMPORTANTE: nunca chamar isto de dentro do callback onAuthStateChange
+    // diretamente — o supabase-js segura um lock e chamadas ao banco
+    // (.from / .rpc) dão DEADLOCK. Sempre via setTimeout(0) pra escapar.
+    const resolveProfile = async (userId: string) => {
+      try {
+        const profile = await ensureProfile(userId);
+        if (!mounted) return;
+        if (profile && !profile.isBlocked) {
+          setUser(profile);
+        } else if (profile?.isBlocked) {
+          await signOutUser();
+          setUser(null);
+        } else {
+          setUser(null);
+        }
+      } catch (e) {
+        console.error('[auth resolveProfile] erro:', e);
+      } finally {
+        if (mounted) {
+          clearTimeout(failsafeTimer);
+          setAuthLoading(false);
+        }
+      }
+    };
+
+    // 1) Lê sessão inicial (fora de callback de auth — seguro chamar direto)
     (async () => {
       try {
         const { data } = await supabase.auth.getSession();
         if (!mounted) return;
         if (data.session?.user) {
-          try {
-            const profile = await ensureProfile(data.session.user.id);
-            if (!mounted) return;
-            if (profile && !profile.isBlocked) {
-              setUser(profile);
-            } else if (profile?.isBlocked) {
-              await signOutUser();
-            }
-          } catch (e) {
-            console.error('[auth bootstrap] erro ao buscar profile:', e);
+          await resolveProfile(data.session.user.id);
+        } else {
+          if (mounted) {
+            clearTimeout(failsafeTimer);
+            setAuthLoading(false);
           }
         }
       } catch (e) {
         console.error('[auth bootstrap] erro na sessão:', e);
-      } finally {
         if (mounted) {
           clearTimeout(failsafeTimer);
           setAuthLoading(false);
@@ -242,25 +262,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
     })();
 
-    // 2) Subscreve mudanças (signIn / signOut / token refresh)
-    const { data: subscription } = supabase.auth.onAuthStateChange(async (event, session) => {
+    // 2) Subscreve mudanças. O callback NÃO pode fazer chamadas async ao
+    //    banco diretamente (deadlock do supabase-js). Adiamos com
+    //    setTimeout(0) pra rodar fora do lock interno.
+    const { data: subscription } = supabase.auth.onAuthStateChange((event, session) => {
       if (!mounted) return;
-      try {
-        if (event === 'SIGNED_OUT' || !session?.user) {
-          setUser(null);
-          return;
-        }
-        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
-          const profile = await ensureProfile(session.user.id);
-          if (!mounted) return;
-          if (profile && !profile.isBlocked) setUser(profile);
-          else if (profile?.isBlocked) {
-            await signOutUser();
-            setUser(null);
-          }
-        }
-      } catch (e) {
-        console.error('[auth onChange] erro:', e);
+      if (event === 'SIGNED_OUT' || !session?.user) {
+        setUser(null);
+        return;
+      }
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
+        const uid = session.user.id;
+        setTimeout(() => {
+          if (mounted) resolveProfile(uid);
+        }, 0);
       }
     });
 
@@ -274,17 +289,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const signIn = useCallback(async (email: string, password: string) => {
     const result = await signInUser(email, password);
     if (result.error) return { error: result.error };
-    if (result.profile) setUser(result.profile);
+    // O profile é resolvido pelo listener onAuthStateChange (SIGNED_IN),
+    // que roda fora do lock do supabase-js. Não setamos user aqui.
     return {};
   }, []);
 
   const signUp = useCallback(async (params: { name: string; email: string; phone: string; password: string }) => {
     const result = await signUpUser(params);
     if (result.error) return { error: result.error };
-    // Após cadastro direto, faz login automático
-    const loginResult = await signInUser(params.email, params.password);
-    if (loginResult.error) return { error: loginResult.error };
-    if (loginResult.profile) setUser(loginResult.profile);
+    // signUp já autentica; o listener onAuthStateChange resolve o profile.
     return {};
   }, []);
 

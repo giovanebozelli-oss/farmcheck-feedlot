@@ -100,7 +100,10 @@ export async function signUpUser(params: {
     return { error: traduzErroAuth(error.message) };
   }
 
-  // Caso "Email já cadastrado" → tenta adoção via signIn
+  // Caso "Email já cadastrado" → tenta adoção via signIn.
+  // O nome/telefone já foram enviados no metadata do signUp acima,
+  // e a função fc_ensure_profile (chamada pelo listener onAuthStateChange,
+  // FORA do lock do supabase-js) lê esse metadata como fallback.
   console.info('[signUp] email já existe em auth.users; tentando adoção via signIn…');
   const signInResult = await supabase.auth.signInWithPassword({
     email: emailNorm,
@@ -108,7 +111,6 @@ export async function signUpUser(params: {
   });
 
   if (signInResult.error || !signInResult.data.user) {
-    // Senha não bate com a conta existente
     return {
       error:
         'Este e-mail já está cadastrado em outro sistema (ex: Visit Report) com uma senha diferente. ' +
@@ -117,21 +119,10 @@ export async function signUpUser(params: {
     };
   }
 
-  // Logou! Agora cria o profile FarmCheck via RPC
-  const { data: profileData, error: profileError } = await supabase.rpc('fc_ensure_profile', {
-    p_name: nameTrim,
-    p_phone: phoneTrim,
-  });
-
-  if (profileError) {
-    console.error('[adoption ensure_profile]', profileError);
-    return { error: 'Não foi possível criar seu perfil no FarmCheck. Tente novamente.' };
-  }
-
-  if (!profileData) {
-    return { error: 'Perfil não pôde ser criado. Contate o administrador.' };
-  }
-
+  // NÃO chamamos .rpc() aqui (deadlock logo após signInWithPassword).
+  // O listener onAuthStateChange dispara SIGNED_IN e o ensureProfile
+  // criará/adotará o profile fora do lock. Como o signUp acima já
+  // mandou name/phone no metadata, o profile sai com os dados certos.
   return {};
 }
 
@@ -152,29 +143,11 @@ export async function signInUser(email: string, password: string): Promise<{ err
   }
   if (!data.user) return { error: 'Erro ao entrar.' };
 
-  // Busca o profile (auto-cria se órfão)
-  const profile = await ensureProfile(data.user.id);
-  if (!profile) {
-    return { error: 'Não foi possível carregar seu perfil. Tente novamente.' };
-  }
-  if (profile.isBlocked) {
-    await supabase.auth.signOut();
-    return {
-      error:
-        'Sua conta está bloqueada.' +
-        (profile.blockedReason ? ` Motivo: ${profile.blockedReason}` : '') +
-        ' Contate o administrador.',
-    };
-  }
-
-  // Atualiza last_login_at via RPC (best-effort)
-  try {
-    await supabase.rpc('fc_update_last_login');
-  } catch (e) {
-    console.warn('[fc_update_last_login] falhou:', e);
-  }
-
-  return { profile };
+  // NÃO buscamos o profile aqui. O listener onAuthStateChange (no context)
+  // dispara SIGNED_IN e resolve o profile FORA do lock do supabase-js.
+  // Fazer .from()/.rpc() aqui, logo após signInWithPassword, pode dar
+  // deadlock com o lock interno do supabase-js. Retornamos só sucesso.
+  return {};
 }
 
 /** Faz logout. */
@@ -202,9 +175,16 @@ export async function fetchProfile(userId: string): Promise<UserProfile | null> 
  */
 export async function ensureProfile(userId: string): Promise<UserProfile | null> {
   const existing = await fetchProfile(userId);
-  if (existing) return existing;
+  if (existing) {
+    // best-effort: atualiza último acesso (roda fora do lock, seguro)
+    supabase.rpc('fc_update_last_login').then(
+      () => {},
+      (e) => console.warn('[fc_update_last_login] falhou:', e)
+    );
+    return existing;
+  }
 
-  // Não existe → chama RPC pra criar
+  // Não existe → chama RPC pra criar/adotar
   const { data, error } = await supabase.rpc('fc_ensure_profile');
   if (error) {
     console.error('[ensureProfile]', error);
