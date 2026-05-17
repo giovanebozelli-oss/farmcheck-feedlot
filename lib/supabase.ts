@@ -1,14 +1,16 @@
 import { createClient } from '@supabase/supabase-js';
 
-// Vite expõe variáveis com prefixo VITE_
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+// Projeto FarmCheck dedicado (sa-east-1) — separado do VisitReport.
+// Estes valores são o fallback embutido; podem ser sobrescritos por
+// variáveis VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY no Netlify.
+const FALLBACK_URL = 'https://equqnjwfzwsuchwtkrqi.supabase.co';
+const FALLBACK_ANON_KEY = 'sb_publishable_Z9ce0IVXNi0QsHlakODouA_PKks5Whb';
 
-if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-  console.error(
-    '[FarmCheck] Variáveis VITE_SUPABASE_URL e/ou VITE_SUPABASE_ANON_KEY ausentes. ' +
-      'Configure-as no arquivo .env.local (dev) ou no painel do Netlify (produção).'
-  );
+const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL as string) || FALLBACK_URL;
+const SUPABASE_ANON_KEY = (import.meta.env.VITE_SUPABASE_ANON_KEY as string) || FALLBACK_ANON_KEY;
+
+if (!import.meta.env.VITE_SUPABASE_URL) {
+  console.info('[FarmCheck] Usando credenciais Supabase embutidas (projeto FarmCheck dedicado).');
 }
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
@@ -55,30 +57,87 @@ const profileFromDb = (row: any): UserProfile => ({
 });
 
 /** Cadastro de novo usuário. Retorna erro se falhar. */
+/**
+ * Cadastro de novo usuário FarmCheck.
+ *
+ * Comportamento:
+ *  - Caso normal: cria conta no auth.users + profile (via trigger handle_new_user)
+ *  - Caso especial: email já existe em outro app (ex: VisitReport) →
+ *    tenta logar com a senha digitada. Se autenticar, "adopta" a conta
+ *    pro FarmCheck criando o profile via fc_ensure_profile.
+ *    Se a senha não bater → mensagem clara explicando.
+ */
 export async function signUpUser(params: {
   name: string;
   email: string;
   phone: string;
   password: string;
 }): Promise<{ error?: string }> {
+  const emailNorm = params.email.trim().toLowerCase();
+  const nameTrim = params.name.trim();
+  const phoneTrim = params.phone.trim();
+
   const { data, error } = await supabase.auth.signUp({
-    email: params.email.trim().toLowerCase(),
+    email: emailNorm,
     password: params.password,
     options: {
       data: {
-        name: params.name.trim(),
-        phone: params.phone.trim(),
+        name: nameTrim,
+        phone: phoneTrim,
+        app: 'farmcheck', // marca o cadastro como vindo deste app
       },
     },
   });
-  if (error) {
+
+  // Sucesso direto: trigger criou profile
+  if (!error && data.user) {
+    return {};
+  }
+
+  // Erro NÃO relacionado a email duplicado: retorna direto
+  if (error && !isAlreadyRegisteredError(error.message)) {
     console.error('[signUp]', error);
     return { error: traduzErroAuth(error.message) };
   }
-  if (!data.user) {
-    return { error: 'Erro ao criar conta. Tente novamente.' };
+
+  // Caso "Email já cadastrado" → tenta adoção via signIn
+  console.info('[signUp] email já existe em auth.users; tentando adoção via signIn…');
+  const signInResult = await supabase.auth.signInWithPassword({
+    email: emailNorm,
+    password: params.password,
+  });
+
+  if (signInResult.error || !signInResult.data.user) {
+    // Senha não bate com a conta existente
+    return {
+      error:
+        'Este e-mail já está cadastrado em outro sistema (ex: Visit Report) com uma senha diferente. ' +
+        'Pra usar no FarmCheck, digite a MESMA senha do outro sistema, ' +
+        'ou cadastre-se com um e-mail diferente.',
+    };
   }
+
+  // Logou! Agora cria o profile FarmCheck via RPC
+  const { data: profileData, error: profileError } = await supabase.rpc('fc_ensure_profile', {
+    p_name: nameTrim,
+    p_phone: phoneTrim,
+  });
+
+  if (profileError) {
+    console.error('[adoption ensure_profile]', profileError);
+    return { error: 'Não foi possível criar seu perfil no FarmCheck. Tente novamente.' };
+  }
+
+  if (!profileData) {
+    return { error: 'Perfil não pôde ser criado. Contate o administrador.' };
+  }
+
   return {};
+}
+
+function isAlreadyRegisteredError(msg: string): boolean {
+  const m = msg.toLowerCase();
+  return m.includes('already registered') || m.includes('already exists') || m.includes('user already');
 }
 
 /** Login com email e senha. Verifica se conta está bloqueada. */
@@ -93,10 +152,10 @@ export async function signInUser(email: string, password: string): Promise<{ err
   }
   if (!data.user) return { error: 'Erro ao entrar.' };
 
-  // Busca o profile
-  const profile = await fetchProfile(data.user.id);
+  // Busca o profile (auto-cria se órfão)
+  const profile = await ensureProfile(data.user.id);
   if (!profile) {
-    return { error: 'Perfil não encontrado. Contate o administrador.' };
+    return { error: 'Não foi possível carregar seu perfil. Tente novamente.' };
   }
   if (profile.isBlocked) {
     await supabase.auth.signOut();
@@ -132,6 +191,23 @@ export async function fetchProfile(userId: string): Promise<UserProfile | null> 
     .maybeSingle();
   if (error) {
     console.error('[fetchProfile]', error);
+    return null;
+  }
+  return data ? profileFromDb(data) : null;
+}
+
+/**
+ * Busca o profile; se não existir, chama RPC pra criar automaticamente
+ * (failsafe pra contas órfãs criadas antes do trigger).
+ */
+export async function ensureProfile(userId: string): Promise<UserProfile | null> {
+  const existing = await fetchProfile(userId);
+  if (existing) return existing;
+
+  // Não existe → chama RPC pra criar
+  const { data, error } = await supabase.rpc('fc_ensure_profile');
+  if (error) {
+    console.error('[ensureProfile]', error);
     return null;
   }
   return data ? profileFromDb(data) : null;
@@ -181,8 +257,6 @@ export async function setUserAdmin(targetId: string, makeAdmin: boolean): Promis
 function traduzErroAuth(msg: string): string {
   const m = msg.toLowerCase();
   if (m.includes('invalid login credentials')) return 'E-mail ou senha incorretos.';
-  if (m.includes('user already registered') || m.includes('already exists'))
-    return 'Este e-mail já está cadastrado. Faça login ou recupere sua senha.';
   if (m.includes('email rate limit')) return 'Muitas tentativas. Aguarde alguns minutos.';
   if (m.includes('password should be at least'))
     return 'A senha precisa ter pelo menos 6 caracteres.';

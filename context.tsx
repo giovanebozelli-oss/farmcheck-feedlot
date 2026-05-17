@@ -35,6 +35,7 @@ import {
   signUpUser,
   signOutUser,
   fetchProfile,
+  ensureProfile,
   type UserProfile,
 } from './lib/supabase';
 import {
@@ -184,57 +185,88 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // ----- Auth bootstrap: lê sessão do Supabase + subscreve mudanças -----
   const refreshProfile = useCallback(async () => {
-    const { data } = await supabase.auth.getUser();
-    if (!data.user) {
-      setUser(null);
-      return;
+    try {
+      const { data } = await supabase.auth.getUser();
+      if (!data.user) {
+        setUser(null);
+        return;
+      }
+      const profile = await ensureProfile(data.user.id);
+      if (profile && profile.isBlocked) {
+        await signOutUser();
+        setUser(null);
+        alert('Sua conta foi bloqueada. Contate o administrador.');
+        return;
+      }
+      setUser(profile);
+    } catch (e) {
+      console.error('[refreshProfile]', e);
     }
-    const profile = await fetchProfile(data.user.id);
-    if (profile && profile.isBlocked) {
-      await signOutUser();
-      setUser(null);
-      alert('Sua conta foi bloqueada. Contate o administrador.');
-      return;
-    }
-    setUser(profile);
   }, []);
 
   useEffect(() => {
     let mounted = true;
+    // Failsafe: NUNCA deixa o loading ficar preso por mais de 8s
+    const failsafeTimer = setTimeout(() => {
+      if (mounted) {
+        console.warn('[auth] Timeout de 8s atingido. Liberando tela de login.');
+        setAuthLoading(false);
+      }
+    }, 8000);
 
-    // 1) Lê sessão inicial
-    supabase.auth.getSession().then(async ({ data }) => {
-      if (!mounted) return;
-      if (data.session?.user) {
-        const profile = await fetchProfile(data.session.user.id);
-        if (profile && !profile.isBlocked) {
-          setUser(profile);
-        } else if (profile?.isBlocked) {
-          await signOutUser();
+    // 1) Lê sessão inicial — com try/catch pra nunca travar
+    (async () => {
+      try {
+        const { data } = await supabase.auth.getSession();
+        if (!mounted) return;
+        if (data.session?.user) {
+          try {
+            const profile = await ensureProfile(data.session.user.id);
+            if (!mounted) return;
+            if (profile && !profile.isBlocked) {
+              setUser(profile);
+            } else if (profile?.isBlocked) {
+              await signOutUser();
+            }
+          } catch (e) {
+            console.error('[auth bootstrap] erro ao buscar profile:', e);
+          }
+        }
+      } catch (e) {
+        console.error('[auth bootstrap] erro na sessão:', e);
+      } finally {
+        if (mounted) {
+          clearTimeout(failsafeTimer);
+          setAuthLoading(false);
         }
       }
-      setAuthLoading(false);
-    });
+    })();
 
     // 2) Subscreve mudanças (signIn / signOut / token refresh)
     const { data: subscription } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!mounted) return;
-      if (event === 'SIGNED_OUT' || !session?.user) {
-        setUser(null);
-        return;
-      }
-      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
-        const profile = await fetchProfile(session.user.id);
-        if (profile && !profile.isBlocked) setUser(profile);
-        else if (profile?.isBlocked) {
-          await signOutUser();
+      try {
+        if (event === 'SIGNED_OUT' || !session?.user) {
           setUser(null);
+          return;
         }
+        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
+          const profile = await ensureProfile(session.user.id);
+          if (!mounted) return;
+          if (profile && !profile.isBlocked) setUser(profile);
+          else if (profile?.isBlocked) {
+            await signOutUser();
+            setUser(null);
+          }
+        }
+      } catch (e) {
+        console.error('[auth onChange] erro:', e);
       }
     });
 
     return () => {
       mounted = false;
+      clearTimeout(failsafeTimer);
       subscription.subscription.unsubscribe();
     };
   }, []);
