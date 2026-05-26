@@ -17,28 +17,14 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore } from '../context';
 import AuthScreen from './AuthScreen';
+import TratoLogo from './TratoLogo';
 
-const Logo: React.FC<{ className?: string, variant?: 'sidebar' | 'login' }> = ({ className, variant = 'sidebar' }) => {
+const Logo: React.FC<{ className?: string; variant?: 'sidebar' | 'login' }> = ({ className = '', variant = 'sidebar' }) => {
   const isLogin = variant === 'login';
-  
+  const sizeClass = isLogin ? 'w-full max-w-[280px] sm:max-w-[420px]' : 'w-32 sm:w-40 lg:w-44';
   return (
-    <div className={`select-none flex flex-col items-center justify-center ${isLogin ? 'w-full max-w-[280px] sm:max-w-[420px]' : 'w-32 sm:w-40 lg:w-48'} ${className}`}>
-      <svg viewBox="0 0 500 180" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-auto drop-shadow-2xl" preserveAspectRatio="xMidYMid meet">
-        {/* Outer Frame with specific ornate corners */}
-        <path d="M40 10H460C475 10 490 25 490 40V120C490 135 475 150 460 150L250 175L40 150C25 150 10 135 10 120V40C10 25 25 10 40 10Z" fill="#001F3F" stroke="#001F3F" strokeWidth="2"/>
-        
-        {/* Inner Green Decorative Border */}
-        <path d="M43 13H457C470 13 487 30 487 43V117C487 130 470 147 457 147L250 172L43 147C30 147 13 130 13 117V43C13 30 30 13 43 13Z" stroke="#10b981" strokeWidth="2" fill="none"/>
-        
-        {/* Main Text "FarmCheck" - Separated to avoid overlap */}
-        <text x="135" y="105" fill="white" style={{ font: 'bold 78px "Georgia", "Times New Roman", serif' }} textAnchor="middle">Farm</text>
-        <text x="365" y="105" fill="#10b981" style={{ font: 'bold 78px "Georgia", "Times New Roman", serif' }} textAnchor="middle">Check</text>
-        
-        {/* Subtitle "FEEDLOT" with lines */}
-        <line x1="100" y1="142" x2="160" y2="142" stroke="#10b981" strokeWidth="3" />
-        <text x="250" y="150" fill="#10b981" style={{ font: 'bold 24px ui-sans-serif, system-ui', letterSpacing: '14px' }} textAnchor="middle">FEEDLOT</text>
-        <line x1="340" y1="142" x2="400" y2="142" stroke="#10b981" strokeWidth="3" />
-      </svg>
+    <div className={`${sizeClass} ${className}`}>
+      <TratoLogo width="100%" showTagline={isLogin} />
     </div>
   );
 };
@@ -186,7 +172,7 @@ const Layout: React.FC = () => {
             <div className="flex flex-col">
               <div className="flex items-center gap-2">
                 <span className="text-xs font-black text-emerald-600 uppercase tracking-widest leading-none">
-                  FarmCheck Feedlot
+                  Trato — Gestão de Confinamento
                 </span>
                 <span className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-emerald-500' : 'bg-red-400'} animate-pulse`}></span>
               </div>

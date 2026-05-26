@@ -1,4 +1,4 @@
-# FarmCheck Feedlot
+# Trato — Gestão de Confinamento
 
 App de gestão de confinamento bovino — controle de lotes, currais, dietas, tratos diários e movimentações.
 
@@ -9,8 +9,8 @@ App de gestão de confinamento bovino — controle de lotes, currais, dietas, tr
 Crie um arquivo `.env.local` na raiz com:
 
 ```
-VITE_SUPABASE_URL=https://rqacehxhfvikmdtrqgqa.supabase.co
-VITE_SUPABASE_ANON_KEY=sb_publishable_OnEJAIqd8kN2D-mwAYG6AQ_qhW4usnA
+VITE_SUPABASE_URL=https://equqnjwfzwsuchwtkrqi.supabase.co
+VITE_SUPABASE_ANON_KEY=sb_publishable_Z9ce0IVXNi0QsHlakODouA_PKks5Whb
 ```
 
 Em produção (Netlify) configure essas duas variáveis em **Site settings → Environment variables**.

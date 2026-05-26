@@ -114,7 +114,7 @@ export async function signUpUser(params: {
     return {
       error:
         'Este e-mail já está cadastrado em outro sistema (ex: Visit Report) com uma senha diferente. ' +
-        'Pra usar no FarmCheck, digite a MESMA senha do outro sistema, ' +
+        'Pra usar no Trato, digite a MESMA senha do outro sistema, ' +
         'ou cadastre-se com um e-mail diferente.',
     };
   }

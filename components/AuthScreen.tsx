@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Eye, EyeOff, Mail, Lock, User, Phone, AlertCircle, Loader2, LogIn, UserPlus } from 'lucide-react';
+import TratoLogo from './TratoLogo';
 
 // ============================================================
 // AuthScreen — Login + Cadastro (toggle)
@@ -30,20 +31,6 @@ const passwordStrength = (pw: string): { score: number; label: string; color: st
   const colors = ['bg-rose-500', 'bg-rose-400', 'bg-amber-400', 'bg-emerald-400', 'bg-emerald-500'];
   return { score: s, label: labels[s], color: colors[s] };
 };
-
-const Logo: React.FC = () => (
-  <div className="select-none flex flex-col items-center justify-center w-full max-w-[280px] sm:max-w-[420px]">
-    <svg viewBox="0 0 500 180" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-auto drop-shadow-2xl" preserveAspectRatio="xMidYMid meet">
-      <path d="M40 10H460C475 10 490 25 490 40V120C490 135 475 150 460 150L250 175L40 150C25 150 10 135 10 120V40C10 25 25 10 40 10Z" fill="#001F3F" stroke="#001F3F" strokeWidth="2"/>
-      <path d="M43 13H457C470 13 487 30 487 43V117C487 130 470 147 457 147L250 172L43 147C30 147 13 130 13 117V43C13 30 30 13 43 13Z" stroke="#10b981" strokeWidth="2" fill="none"/>
-      <text x="135" y="105" fill="white" style={{ font: 'bold 78px "Georgia", "Times New Roman", serif' }} textAnchor="middle">Farm</text>
-      <text x="365" y="105" fill="#10b981" style={{ font: 'bold 78px "Georgia", "Times New Roman", serif' }} textAnchor="middle">Check</text>
-      <line x1="100" y1="142" x2="160" y2="142" stroke="#10b981" strokeWidth="3" />
-      <text x="250" y="150" fill="#10b981" style={{ font: 'bold 24px ui-sans-serif, system-ui', letterSpacing: '14px' }} textAnchor="middle">FEEDLOT</text>
-      <line x1="340" y1="142" x2="400" y2="142" stroke="#10b981" strokeWidth="3" />
-    </svg>
-  </div>
-);
 
 const AuthScreen: React.FC<Props> = ({ onSignIn, onSignUp }) => {
   const [mode, setMode] = useState<'login' | 'signup'>('login');
@@ -114,11 +101,13 @@ const AuthScreen: React.FC<Props> = ({ onSignIn, onSignUp }) => {
       </div>
 
       <div className="relative z-10 w-full max-w-[92vw] sm:max-w-[440px] flex flex-col items-center bg-white/5 backdrop-blur-2xl p-6 sm:p-8 rounded-[2rem] sm:rounded-[2.5rem] border border-white/20 shadow-[0_48px_80px_-12px_rgba(0,0,0,0.6)]">
-        <Logo />
+        <div className="w-full max-w-[280px] sm:max-w-[420px]">
+          <TratoLogo width="100%" />
+        </div>
 
         <div className="text-center mb-4 md:mb-6 mt-4">
-          <h2 className="text-emerald-500 font-black uppercase tracking-[0.4em] text-[11px]">
-            SISTEMA DE GESTÃO FEEDLOT
+          <h2 className="text-emerald-500 font-black uppercase tracking-[0.3em] text-[11px]">
+            SISTEMA DE GESTÃO DE CONFINAMENTO
           </h2>
         </div>
 

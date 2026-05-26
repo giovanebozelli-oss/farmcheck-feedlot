@@ -1,0 +1,19 @@
+{
+  "name": "Trato — Gestão de Confinamento",
+  "short_name": "Trato",
+  "description": "Sistema de gestão de feedlot bovino",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#001F3F",
+  "theme_color": "#001F3F",
+  "lang": "pt-BR",
+  "icons": [
+    {
+      "src": "/logo-trato.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
