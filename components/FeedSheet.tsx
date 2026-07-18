@@ -212,7 +212,13 @@ const FeedSheet: React.FC = () => {
       const lastRecordBefore = feedHistory.find(
         (r) => r.lotId === lot.id && r.date < selectedDate
       );
-      const inheritedStep = (lastRecordBefore as any)?.dietsPerTrato as string[] | undefined;
+      // Só herda o step se a dieta principal do lote NÃO mudou desde o último
+      // lançamento — trocar a dieta principal zera a transição (todos os tratos
+      // passam a usar a nova dieta selecionada).
+      const inheritedStep =
+        lastRecordBefore && lastRecordBefore.dietId === lot.currentDietId
+          ? ((lastRecordBefore as any).dietsPerTrato as string[] | undefined)
+          : undefined;
       const inheritedDietsPerTrato: string[] | undefined =
         inheritedStep && inheritedStep.length === numTratos
           ? inheritedStep.map((dId) =>
