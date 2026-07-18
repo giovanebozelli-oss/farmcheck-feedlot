@@ -65,7 +65,7 @@ export const generateInsumosExcel = (
   const worksheetData = data.map(row => ({
     'Ingrediente': row.name,
     'Quantidade (kg MN)': Number(row.totalQuantity.toFixed(2)),
-    'Quantidade (Ton MN)': Number((row.totalQuantity / 1000).toFixed(3)),
+    'Quantidade (Ton MN)': Number((row.totalQuantity / 1000).toFixed(2)),
     'Preço Médio (R$/Ton)': row.pricePerTon,
     'Custo Total (R$)': Number(row.totalCost.toFixed(2)),
   }));
@@ -73,7 +73,7 @@ export const generateInsumosExcel = (
   worksheetData.push({
     'Ingrediente': 'TOTAL',
     'Quantidade (kg MN)': Number(totalQty.toFixed(2)),
-    'Quantidade (Ton MN)': Number((totalQty / 1000).toFixed(3)),
+    'Quantidade (Ton MN)': Number((totalQty / 1000).toFixed(2)),
     'Preço Médio (R$/Ton)': 0,
     'Custo Total (R$)': Number(totalCost.toFixed(2)),
   });
@@ -91,7 +91,7 @@ export const generateInsumosExcel = (
     { Campo: 'Período Fim', Valor: endDate },
     { Campo: 'Filtro de Lote', Valor: lotName || 'Todos os lotes' },
     { Campo: 'Total kg MN', Valor: Number(totalQty.toFixed(2)) },
-    { Campo: 'Total Ton MN', Valor: Number((totalQty / 1000).toFixed(3)) },
+    { Campo: 'Total Ton MN', Valor: Number((totalQty / 1000).toFixed(2)) },
     { Campo: 'Custo Total (R$)', Valor: Number(totalCost.toFixed(2)) },
     { Campo: 'Gerado em', Valor: new Date().toLocaleString('pt-BR') },
   ]);
@@ -254,7 +254,7 @@ export interface FechamentoExportDataXLS {
 }
 
 export const generateFechamentoExcel = (data: FechamentoExportDataXLS) => {
-  const safeNum = (v: any) => (Number.isFinite(Number(v)) ? Number(Number(v).toFixed(4)) : 0);
+  const safeNum = (v: any) => (Number.isFinite(Number(v)) ? Number(Number(v).toFixed(2)) : 0);
 
   // Aba 1: Resumo (tabular vertical, Métrica/Valor)
   const resumoRows: Array<{ Bloco: string; Métrica: string; Valor: any; Unidade: string }> = [
@@ -348,7 +348,7 @@ export interface FechamentoConsolidadoRowXLS {
 }
 
 export const generateFechamentoConsolidadoExcel = (rows: FechamentoConsolidadoRowXLS[]) => {
-  const safeNum = (v: any) => (Number.isFinite(Number(v)) ? Number(Number(v).toFixed(4)) : 0);
+  const safeNum = (v: any) => (Number.isFinite(Number(v)) ? Number(Number(v).toFixed(2)) : 0);
 
   const worksheetData = rows.map(r => ({
     'Lote': r.lotName,

@@ -174,10 +174,10 @@ const IngredientsTab = () => {
                         {ing.pricePerTon.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL', minimumFractionDigits: 0})}
                       </td>
                       <td className="py-4 px-4 text-right font-mono font-bold text-slate-700 text-xs">
-                        R$ {(ing.pricePerTon / 1000).toFixed(4)}
+                        R$ {(ing.pricePerTon / 1000).toLocaleString('pt-BR', { minimumFractionDigits: 4, maximumFractionDigits: 4 })}
                       </td>
                       <td className="py-4 px-4 text-right font-mono font-black text-emerald-700 bg-emerald-50/20">
-                        R$ {(ing.pricePerTon / 1000 / (ing.dryMatterContent / 100)).toFixed(4)}
+                        R$ {(ing.pricePerTon / 1000 / (ing.dryMatterContent / 100)).toLocaleString('pt-BR', { minimumFractionDigits: 4, maximumFractionDigits: 4 })}
                       </td>
                       <td className="py-4 px-4 text-right flex gap-1 justify-end">
                         <button 
@@ -386,8 +386,8 @@ const DietsTab = () => {
                 </div>
               </div>
               <div className="text-[10px] text-slate-500 mt-2 flex justify-between font-bold">
-                <span className="bg-white/50 px-1.5 rounded border border-slate-100">MS: {diet.calculatedDryMatter.toFixed(1)}%</span>
-                <span className="text-emerald-600">R$ {diet.calculatedCostPerKg.toFixed(3)}/kg MN</span>
+                <span className="bg-white/50 px-1.5 rounded border border-slate-100">MS: {diet.calculatedDryMatter.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%</span>
+                <span className="text-emerald-600">R$ {diet.calculatedCostPerKg.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })}/kg MN</span>
               </div>
             </div>
           ))}
@@ -403,8 +403,8 @@ const DietsTab = () => {
                   <h3 className="text-lg font-black text-slate-900 uppercase">Editando: {editingDiet.name}</h3>
                   <div className="flex gap-4 mt-2">
                     <div className="text-xs font-bold text-slate-500">MS Projetada: <span className="text-emerald-600 font-black">{editingDiet.calculatedDryMatter}%</span></div>
-                    <div className="text-xs font-bold text-slate-500 underline decoration-dotted">Custo p/ Kg MS: <span className="text-emerald-700 font-black">R$ {editingDiet.calculatedDryMatter > 0 ? (editingDiet.calculatedCostPerKg / (editingDiet.calculatedDryMatter / 100)).toFixed(4) : '0.0000'}</span></div>
-                    <div className="text-xs font-bold text-slate-500">Custo p/ Kg MN: <span className="text-emerald-600 font-black">R$ {editingDiet.calculatedCostPerKg.toFixed(4)}</span></div>
+                    <div className="text-xs font-bold text-slate-500 underline decoration-dotted">Custo p/ Kg MS: <span className="text-emerald-700 font-black">R$ {editingDiet.calculatedDryMatter > 0 ? (editingDiet.calculatedCostPerKg / (editingDiet.calculatedDryMatter / 100)).toLocaleString('pt-BR', { minimumFractionDigits: 4, maximumFractionDigits: 4 }) : '0.0000'}</span></div>
+                    <div className="text-xs font-bold text-slate-500">Custo p/ Kg MN: <span className="text-emerald-600 font-black">R$ {editingDiet.calculatedCostPerKg.toLocaleString('pt-BR', { minimumFractionDigits: 4, maximumFractionDigits: 4 })}</span></div>
                   </div>
                </div>
                <div className="flex gap-2">
@@ -437,7 +437,7 @@ const DietsTab = () => {
                         <div className="flex items-center gap-8">
                            <div className="text-right">
                               <div className="text-[9px] font-black text-slate-400 uppercase leading-none mb-1">Inclusão MN (CALC)</div>
-                              <div className="text-sm font-black text-slate-400">{mnPct.toFixed(2)}%</div>
+                              <div className="text-sm font-black text-slate-400">{mnPct.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%</div>
                            </div>
                            <div className="relative">
                               <div className="absolute -top-3 left-0 text-[10px] font-bold text-emerald-600 uppercase">Input % MS</div>
@@ -529,7 +529,7 @@ const DietsTab = () => {
                   </div>
                   <div>
                     <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Custo p/ kg MN</div>
-                    <div className="text-2xl font-black text-white leading-none">R$ {selectedDiet.calculatedCostPerKg.toFixed(4)}</div>
+                    <div className="text-2xl font-black text-white leading-none">R$ {selectedDiet.calculatedCostPerKg.toLocaleString('pt-BR', { minimumFractionDigits: 4, maximumFractionDigits: 4 })}</div>
                   </div>
                </div>
                <div className="bg-emerald-800 p-5 rounded-2xl border border-emerald-700 flex items-center gap-4 text-white shadow-lg">
@@ -538,7 +538,7 @@ const DietsTab = () => {
                   </div>
                   <div>
                     <div className="text-[10px] font-black text-emerald-300 uppercase tracking-widest leading-none mb-1">Custo p/ kg MS</div>
-                    <div className="text-2xl font-black text-white leading-none">R$ {selectedDiet.calculatedDryMatter > 0 ? (selectedDiet.calculatedCostPerKg / (selectedDiet.calculatedDryMatter / 100)).toFixed(4) : '0.0000'}</div>
+                    <div className="text-2xl font-black text-white leading-none">R$ {selectedDiet.calculatedDryMatter > 0 ? (selectedDiet.calculatedCostPerKg / (selectedDiet.calculatedDryMatter / 100)).toLocaleString('pt-BR', { minimumFractionDigits: 4, maximumFractionDigits: 4 }) : '0.0000'}</div>
                   </div>
                </div>
             </div>
@@ -563,9 +563,9 @@ const DietsTab = () => {
                         <div className="font-bold text-slate-700 italic uppercase">{ing?.name}</div>
                         <div className="flex gap-12 items-center">
                           <div className="w-20 text-center font-bold text-slate-400">{item.inclusionMSPercentage}%</div>
-                          <div className="w-20 text-center font-black text-emerald-600">{mnPct.toFixed(2)}%</div>
+                          <div className="w-20 text-center font-black text-emerald-600">{mnPct.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%</div>
                           <div className="w-24 text-right font-mono text-xs text-slate-500">
-                            R$ {((ing ? ing.pricePerTon / 1000 : 0) * (mnPct / 100)).toFixed(4)}
+                            R$ {((ing ? ing.pricePerTon / 1000 : 0) * (mnPct / 100)).toLocaleString('pt-BR', { minimumFractionDigits: 4, maximumFractionDigits: 4 })}
                           </div>
                         </div>
                       </div>

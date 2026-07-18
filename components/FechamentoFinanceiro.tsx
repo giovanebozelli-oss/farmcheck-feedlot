@@ -309,11 +309,11 @@ const ClosingPanel: React.FC<{
           </div>
           <div>
             <div className="text-slate-400 uppercase font-bold">Peso inicial</div>
-            <div className="font-mono font-bold">{lot.initialWeight.toFixed(1)} kg</div>
+            <div className="font-mono font-bold">{lot.initialWeight.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} kg</div>
           </div>
           <div>
             <div className="text-slate-400 uppercase font-bold">Peso projetado</div>
-            <div className="font-mono font-bold">{projWeight.toFixed(1)} kg</div>
+            <div className="font-mono font-bold">{projWeight.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} kg</div>
           </div>
         </div>
       </div>
@@ -325,9 +325,9 @@ const ClosingPanel: React.FC<{
           <h3 className="text-xs font-black uppercase tracking-tight text-slate-700">Dados Calculados do Período</h3>
         </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
-          <Metric label="MS/cab/dia médio" value={`${avgMSConsumption.toFixed(2)} kg`} />
+          <Metric label="MS/cab/dia médio" value={`${avgMSConsumption.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg`} />
           <Metric label="Custo nutricional/cab/dia" value={formatCurrency(avgNutritionalCost)} />
-          <Metric label="MS total/cab" value={`${results.msConsumptionTotalPerHead.toFixed(0)} kg`} />
+          <Metric label="MS total/cab" value={`${results.msConsumptionTotalPerHead.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })} kg`} />
           <Metric label="Custo nutricional total/cab" value={formatCurrency(results.nutritionalCostTotalPerHead)} />
         </div>
         {lotFeedHistory.length === 0 && (
@@ -379,15 +379,15 @@ const ClosingPanel: React.FC<{
         <div className="mb-4">
           <div className="text-[10px] font-bold text-slate-400 uppercase mb-2">Zootécnico</div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <ResultCard label="GMD" value={`${results.gmd.toFixed(2)} kg/dia`} accent="emerald" />
-            <ResultCard label="GDC" value={`${results.gdc.toFixed(2)} kg/dia`} accent="emerald" />
-            <ResultCard label="@ produzidas/cab" value={`${results.arrobasProduced.toFixed(2)} @`} accent="emerald" />
-            <ResultCard label="Eficiência biológica" value={`${results.biologicalEfficiency.toFixed(1)} kg MS/@`} accent="emerald" />
+            <ResultCard label="GMD" value={`${results.gmd.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg/dia`} accent="emerald" />
+            <ResultCard label="GDC" value={`${results.gdc.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg/dia`} accent="emerald" />
+            <ResultCard label="@ produzidas/cab" value={`${results.arrobasProduced.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} @`} accent="emerald" />
+            <ResultCard label="Eficiência biológica" value={`${results.biologicalEfficiency.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} kg MS/@`} accent="emerald" />
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3">
-            <ResultCard label="@ inicial" value={`${results.arrobasInitial.toFixed(2)} @`} accent="slate" small />
-            <ResultCard label="@ final" value={`${results.arrobasFinal.toFixed(2)} @`} accent="slate" small />
-            <ResultCard label="Rend. estimado" value={results.yieldEstimated > 0 ? `${results.yieldEstimated.toFixed(1)}%` : '—'} accent="slate" small />
+            <ResultCard label="@ inicial" value={`${results.arrobasInitial.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} @`} accent="slate" small />
+            <ResultCard label="@ final" value={`${results.arrobasFinal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} @`} accent="slate" small />
+            <ResultCard label="Rend. estimado" value={results.yieldEstimated > 0 ? `${results.yieldEstimated.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%` : '—'} accent="slate" small />
             <ResultCard label="Custo @ produzida" value={formatCurrency(results.costPerArrobaProduced)} accent="amber" small />
           </div>
         </div>
@@ -399,10 +399,10 @@ const ClosingPanel: React.FC<{
             <ResultCard label="Receita/cab" value={formatCurrency(results.revenuePerHead)} accent="blue" />
             <ResultCard label="Despesa total/cab" value={formatCurrency(results.totalExpensePerHead)} accent="rose" />
             <ResultCard label={results.profitPerHead >= 0 ? "Lucro/cab" : "Prejuízo/cab"} value={formatCurrency(results.profitPerHead)} accent={results.profitPerHead >= 0 ? "emerald" : "rose"} />
-            <ResultCard label="Rentab. período" value={`${results.profitabilityPeriodPercent.toFixed(2)}%`} accent={results.profitabilityPeriodPercent >= 0 ? "emerald" : "rose"} />
+            <ResultCard label="Rentab. período" value={`${results.profitabilityPeriodPercent.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`} accent={results.profitabilityPeriodPercent >= 0 ? "emerald" : "rose"} />
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3">
-            <ResultCard label="Rentab. ao mês" value={`${results.profitabilityMonthlyPercent.toFixed(2)}%`} accent="emerald" small />
+            <ResultCard label="Rentab. ao mês" value={`${results.profitabilityMonthlyPercent.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`} accent="emerald" small />
             <ResultCard label="Custo nutricional" value={formatCurrency(results.nutritionalCostTotalPerHead)} accent="slate" small />
             <ResultCard label="Custo operacional" value={formatCurrency(results.operationalCostTotalPerHead)} accent="slate" small />
             <ResultCard label="Receita total" value={formatCurrency(results.revenuePerHead * headsSlaughtered)} accent="slate" small />

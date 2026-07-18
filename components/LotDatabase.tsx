@@ -86,7 +86,7 @@ const LotDatabase: React.FC = () => {
           <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between relative overflow-hidden group">
             <div className="relative z-10 space-y-1">
               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Taxa de Ocupação Média</p>
-              <p className="text-2xl font-black text-slate-900 italic tracking-tighter">{globalOccupancyRate.toFixed(1)}<span className="text-xs text-slate-400 font-bold not-italic">%</span></p>
+              <p className="text-2xl font-black text-slate-900 italic tracking-tighter">{globalOccupancyRate.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}<span className="text-xs text-slate-400 font-bold not-italic">%</span></p>
             </div>
             <div className="absolute inset-x-0 bottom-0 h-1 bg-slate-100">
                <div className="h-full bg-emerald-500 transition-all duration-1000" style={{ width: `${Math.min(100, globalOccupancyRate)}%` }}></div>
@@ -142,7 +142,7 @@ const LotDatabase: React.FC = () => {
                                  style={{ width: `${Math.min(100, rate)}%` }}
                                ></div>
                             </div>
-                            <span className={`text-xs font-black w-8 ${rate > 95 ? 'text-red-600' : 'text-slate-700'}`}>{rate.toFixed(0)}%</span>
+                            <span className={`text-xs font-black w-8 ${rate > 95 ? 'text-red-600' : 'text-slate-700'}`}>{rate.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}%</span>
                          </div>
                       </td>
                     </tr>
@@ -361,11 +361,11 @@ const LotDatabase: React.FC = () => {
                                    <div className="mt-3 grid grid-cols-2 gap-4">
                                       <div className="bg-slate-50 p-2 rounded-lg border border-slate-100">
                                          <div className="text-[10px] font-black text-slate-400 uppercase leading-none mb-1">Custo kg/MN</div>
-                                         <div className="text-xs font-bold text-slate-700">R$ {diet.calculatedCostPerKg.toFixed(2)}</div>
+                                         <div className="text-xs font-bold text-slate-700">R$ {diet.calculatedCostPerKg.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                                       </div>
                                       <div className="bg-slate-50 p-2 rounded-lg border border-slate-100">
                                          <div className="text-[10px] font-black text-slate-400 uppercase leading-none mb-1">Matéria Seca</div>
-                                         <div className="text-xs font-bold text-slate-700">{diet.calculatedDryMatter.toFixed(1)}%</div>
+                                         <div className="text-xs font-bold text-slate-700">{diet.calculatedDryMatter.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%</div>
                                       </div>
                                    </div>
                                 )}
@@ -468,7 +468,7 @@ const LotDatabase: React.FC = () => {
                           <option value="">Selecione uma dieta...</option>
                           {diets.filter(d => d.status === 'ACTIVE' || d.id === selectedLot.currentDietId).map(diet => (
                             <option key={diet.id} value={diet.id}>
-                              {diet.name} (R$ {diet.calculatedCostPerKg.toFixed(2)}/kg) {diet.status === 'INACTIVE' ? '(INATIVA)' : ''}
+                              {diet.name} (R$ {diet.calculatedCostPerKg.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/kg) {diet.status === 'INACTIVE' ? '(INATIVA)' : ''}
                             </option>
                           ))}
                         </select>
@@ -485,7 +485,7 @@ const LotDatabase: React.FC = () => {
                               <p className="text-xs font-bold text-slate-700 mb-1">Informações da Dieta</p>
                               {diets.find(d => d.id === selectedLot.currentDietId) && (
                                 <div className="text-xs text-slate-500 space-y-1">
-                                   <div className="flex justify-between"><span>Matéria Seca:</span> <span className="font-mono">{diets.find(d => d.id === selectedLot.currentDietId)?.calculatedDryMatter.toFixed(1)}%</span></div>
+                                   <div className="flex justify-between"><span>Matéria Seca:</span> <span className="font-mono">{diets.find(d => d.id === selectedLot.currentDietId)?.calculatedDryMatter.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%</span></div>
                                    <div className="flex justify-between"><span>Inclusão ingredientes:</span> <span className="font-mono">{diets.find(d => d.id === selectedLot.currentDietId)?.ingredients.length} itens</span></div>
                                 </div>
                               )}
@@ -517,7 +517,7 @@ const LotDatabase: React.FC = () => {
                         >
                           {config.gmdCurves.map(curve => (
                             <option key={curve.id} value={curve.id}>
-                              {curve.name} ({curve.gmd.toFixed(2)} kg/dia)
+                              {curve.name} ({curve.gmd.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg/dia)
                             </option>
                           ))}
                         </select>

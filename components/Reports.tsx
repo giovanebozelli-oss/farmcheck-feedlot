@@ -724,20 +724,20 @@ const Reports: React.FC = () => {
                         <td className="px-4 py-4 text-center text-slate-500">{row.entryWeight.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} kg</td>
                         <td className="px-4 py-4 text-center font-black text-slate-800">{row.projWeight.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} kg</td>
                         
-                        <td className="px-2 py-4 text-center bg-emerald-50/50 font-bold">{row.cms_ms_hoje.toFixed(2)}</td>
-                        <td className="px-2 py-4 text-center">{row.cms_ms_ontem.toFixed(2)}</td>
-                        <td className="px-2 py-4 text-center font-bold text-emerald-700">{row.cms_ms_5d.toFixed(2)}</td>
-                        <td className="px-2 py-4 text-center">{row.cms_ms_period.toFixed(2)}</td>
+                        <td className="px-2 py-4 text-center bg-emerald-50/50 font-bold">{row.cms_ms_hoje.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        <td className="px-2 py-4 text-center">{row.cms_ms_ontem.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        <td className="px-2 py-4 text-center font-bold text-emerald-700">{row.cms_ms_5d.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        <td className="px-2 py-4 text-center">{row.cms_ms_period.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
 
-                        <td className="px-2 py-4 text-center bg-emerald-50/30 font-bold">{row.cms_mn_hoje.toFixed(2)}</td>
-                        <td className="px-2 py-4 text-center">{row.cms_mn_ontem.toFixed(2)}</td>
-                        <td className="px-2 py-4 text-center font-bold text-emerald-800">{row.cms_mn_5d.toFixed(2)}</td>
-                        <td className="px-2 py-4 text-center">{row.cms_mn_period.toFixed(2)}</td>
+                        <td className="px-2 py-4 text-center bg-emerald-50/30 font-bold">{row.cms_mn_hoje.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        <td className="px-2 py-4 text-center">{row.cms_mn_ontem.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        <td className="px-2 py-4 text-center font-bold text-emerald-800">{row.cms_mn_5d.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        <td className="px-2 py-4 text-center">{row.cms_mn_period.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
 
-                        <td className="px-2 py-4 text-center bg-blue-50/50 font-bold text-blue-700">{row.pv_hoje.toFixed(2)}%</td>
-                        <td className="px-2 py-4 text-center">{row.pv_ontem.toFixed(2)}%</td>
-                        <td className="px-2 py-4 text-center text-blue-800">{row.pv_5d.toFixed(2)}%</td>
-                        <td className="px-2 py-4 text-center">{row.pv_period.toFixed(2)}%</td>
+                        <td className="px-2 py-4 text-center bg-blue-50/50 font-bold text-blue-700">{row.pv_hoje.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%</td>
+                        <td className="px-2 py-4 text-center">{row.pv_ontem.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%</td>
+                        <td className="px-2 py-4 text-center text-blue-800">{row.pv_5d.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%</td>
+                        <td className="px-2 py-4 text-center">{row.pv_period.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%</td>
 
                         <td className="px-2 py-4 text-center font-bold text-slate-900">{formatCurrency(row.cost_hoje)}</td>
                         <td className="px-2 py-4 text-center text-slate-500">{formatCurrency(row.cost_period)}</td>
@@ -825,8 +825,8 @@ const Reports: React.FC = () => {
                                   </div>
                                   <div style={{ color: '#64748b', lineHeight: 1.6 }}>
                                     <div>DOF: <strong style={{ color: '#0f172a' }}>{d.dof} dias</strong></div>
-                                    <div>CMS MS: <strong style={{ color: '#0f172a' }}>{d.cms.toFixed(2)} kg</strong></div>
-                                    <div>%PV: <strong style={{ color: '#0f172a' }}>{d.pv.toFixed(2)}%</strong></div>
+                                    <div>CMS MS: <strong style={{ color: '#0f172a' }}>{d.cms.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg</strong></div>
+                                    <div>%PV: <strong style={{ color: '#0f172a' }}>{d.pv.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%</strong></div>
                                     {d.score !== undefined && <div>Escore cocho: <strong style={{ color: '#0f172a' }}>{d.score}</strong></div>}
                                   </div>
                                 </div>
@@ -857,7 +857,7 @@ const Reports: React.FC = () => {
                     <div className="grid grid-cols-2 gap-4">
                        <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
                           <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Consumo %PV Médio</div>
-                          <div className="text-xl font-black text-slate-800">{selectedLotData?.pv_5d.toFixed(2)}%</div>
+                          <div className="text-xl font-black text-slate-800">{selectedLotData?.pv_5d.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%</div>
                        </div>
                        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
                           <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Custo Total/Cab</div>
@@ -925,7 +925,7 @@ const Reports: React.FC = () => {
                                <div className="text-[9px] text-slate-400 uppercase">{row.category}</div>
                             </div>
                             <div className="text-right">
-                               <div className="text-sm font-black text-emerald-600">{row.pv_hoje.toFixed(2)}%</div>
+                               <div className="text-sm font-black text-emerald-600">{row.pv_hoje.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%</div>
                                <div className="text-[9px] text-slate-400 uppercase">PV Atual</div>
                             </div>
                          </div>
@@ -1019,7 +1019,7 @@ const InsumosReport: React.FC<InsumosReportProps> = ({ startDate, endDate, usage
           </div>
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
              <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Volume Total Distribuído</div>
-             <div className="text-3xl font-black text-slate-900">{(totalPeriodQty / 1000).toFixed(2)} <span className="text-sm font-bold text-slate-400">Ton MN</span></div>
+             <div className="text-3xl font-black text-slate-900">{(totalPeriodQty / 1000).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span className="text-sm font-bold text-slate-400">Ton MN</span></div>
              <div className="text-[10px] text-slate-400 mt-1">{usageData.length > 0 ? `${usageData.length} ingredientes` : 'Sem registros'}</div>
           </div>
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-center">
@@ -1027,7 +1027,7 @@ const InsumosReport: React.FC<InsumosReportProps> = ({ startDate, endDate, usage
                 <div className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-1">Impacto Financeiro</div>
                 <div className="flex items-center gap-2">
                    <TrendingUp size={24} className="text-emerald-500" />
-                   <span className="text-2xl font-black text-slate-900">{(totalPeriodCost / (totalPeriodQty || 1) * 1000).toFixed(2)}</span>
+                   <span className="text-2xl font-black text-slate-900">{(totalPeriodCost / (totalPeriodQty || 1) * 1000).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                    <span className="text-[10px] font-black text-slate-400 font-mono">R$/Ton MN</span>
                 </div>
              </div>
@@ -1064,7 +1064,7 @@ const InsumosReport: React.FC<InsumosReportProps> = ({ startDate, endDate, usage
                       <tr key={row.id} className="hover:bg-slate-50 transition-colors">
                          <td className="px-6 py-4 font-black text-slate-900 border-l-4 border-emerald-500 italic uppercase">{row.name}</td>
                          <td className="px-6 py-4 text-center font-mono">{row.totalQuantity.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })} kg</td>
-                         <td className="px-6 py-4 text-center font-bold">{(row.totalQuantity / 1000).toFixed(3)} Ton</td>
+                         <td className="px-6 py-4 text-center font-bold">{(row.totalQuantity / 1000).toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} Ton</td>
                          <td className="px-6 py-4 text-center text-slate-500">{formatCurrency(row.pricePerTon)}</td>
                          <td className="px-6 py-4 text-right font-black text-emerald-700">{formatCurrency(row.totalCost)}</td>
                       </tr>
@@ -1075,7 +1075,7 @@ const InsumosReport: React.FC<InsumosReportProps> = ({ startDate, endDate, usage
                       <tr>
                          <td className="px-6 py-4 uppercase">Total</td>
                          <td className="px-6 py-4 text-center">{totalPeriodQty.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })} kg</td>
-                         <td className="px-6 py-4 text-center">{(totalPeriodQty / 1000).toFixed(3)} Ton</td>
+                         <td className="px-6 py-4 text-center">{(totalPeriodQty / 1000).toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} Ton</td>
                          <td></td>
                          <td className="px-6 py-4 text-right text-emerald-600">{formatCurrency(totalPeriodCost)}</td>
                       </tr>
@@ -1134,8 +1134,8 @@ const RegistrosTab: React.FC<{ activeSubTab: 'tratos' | 'movimentos'; setActiveS
                         <tr key={record.id} className="hover:bg-slate-50 group">
                            <td className="px-6 py-4 font-bold text-slate-700">{record.date.split('-').reverse().join('/')}</td>
                            <td className="px-6 py-4 italic font-black text-slate-900 uppercase tracking-tighter">{lot?.name || 'Lote Removido'}</td>
-                           <td className="px-6 py-4 text-center font-mono">{record.actualTotalMN.toFixed(0)}</td>
-                           <td className="px-6 py-4 text-center font-bold text-emerald-600">{record.actualDryMatterPerHead.toFixed(2)}</td>
+                           <td className="px-6 py-4 text-center font-mono">{record.actualTotalMN.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
+                           <td className="px-6 py-4 text-center font-bold text-emerald-600">{record.actualDryMatterPerHead.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                            <td className="px-6 py-4 text-right">
                               <div className="flex justify-end items-center gap-1">
                                 <button
@@ -1314,7 +1314,7 @@ const EditFeedRecordModal: React.FC<EditFeedRecordModalProps> = ({ record, diets
               className="w-full px-3 py-2 border-2 border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none"
             >
               {diets.map(d => (
-                <option key={d.id} value={d.id}>{d.name} ({d.calculatedDryMatter?.toFixed(1)}% MS, R$ {d.calculatedCostPerKg?.toFixed(2)}/kg)</option>
+                <option key={d.id} value={d.id}>{d.name} ({d.calculatedDryMatter?.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}% MS, R$ {d.calculatedCostPerKg?.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/kg)</option>
               ))}
             </select>
           </div>
@@ -1336,20 +1336,20 @@ const EditFeedRecordModal: React.FC<EditFeedRecordModalProps> = ({ record, diets
           <div className="bg-slate-50 rounded-lg p-3 grid grid-cols-2 gap-2 text-xs">
             <div>
               <div className="text-slate-400 uppercase font-bold">MS/cab</div>
-              <div className="font-mono font-bold text-slate-800">{computed.actualMSPerHead.toFixed(2)} kg</div>
+              <div className="font-mono font-bold text-slate-800">{computed.actualMSPerHead.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg</div>
             </div>
             <div>
               <div className="text-slate-400 uppercase font-bold">% PV</div>
-              <div className="font-mono font-bold text-slate-800">{computed.actualMSPercentPV.toFixed(2)}%</div>
+              <div className="font-mono font-bold text-slate-800">{computed.actualMSPercentPV.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%</div>
             </div>
             <div>
               <div className="text-slate-400 uppercase font-bold">Custo/cab</div>
-              <div className="font-mono font-bold text-emerald-700">R$ {computed.costPerHead.toFixed(2)}</div>
+              <div className="font-mono font-bold text-emerald-700">R$ {computed.costPerHead.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
             </div>
             <div>
               <div className="text-slate-400 uppercase font-bold">Desvio</div>
               <div className={`font-mono font-bold ${Math.abs(computed.deviation) > 5 ? 'text-red-600' : 'text-emerald-700'}`}>
-                {computed.deviation > 0 ? '+' : ''}{computed.deviation.toFixed(1)}%
+                {computed.deviation > 0 ? '+' : ''}{computed.deviation.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%
               </div>
             </div>
           </div>

@@ -232,7 +232,7 @@ const AnimalMovementPage: React.FC = () => {
                          <option value="">Selecione a curva esperada...</option>
                          {gmdCurves.map(curve => (
                            <option key={curve.id} value={curve.id}>
-                             {curve.name} — Meta: {curve.gmd.toFixed(3)} kg/dia
+                             {curve.name} — Meta: {curve.gmd.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg/dia
                            </option>
                          ))}
                        </select>

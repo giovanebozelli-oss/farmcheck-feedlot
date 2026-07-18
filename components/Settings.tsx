@@ -297,7 +297,7 @@ const GeneralParamsTab = () => {
                  <div className="text-right flex flex-col items-end gap-2">
                     <div>
                       <div className="text-xs font-black text-emerald-600 uppercase tracking-widest leading-none mb-1">GMD (kg/dia)</div>
-                      <div className="text-lg font-black text-slate-900">{curve.gmd.toFixed(2)}</div>
+                      <div className="text-lg font-black text-slate-900">{curve.gmd.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                     </div>
                     <button 
                       onClick={() => {

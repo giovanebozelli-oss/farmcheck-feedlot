@@ -19,6 +19,7 @@ import {
   MovementType,
   Category,
   Closing,
+  BunkReading,
 } from './types';
 import { DEFAULT_CONFIG } from './constants';
 import {
@@ -57,6 +58,8 @@ import {
   configToDb,
   closingToDb,
   closingFromDb,
+  bunkReadingFromDb,
+  bunkReadingToDb,
 } from './lib/dbMappers';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 
@@ -110,6 +113,8 @@ interface AppContextType {
 
   feedHistory: DailyFeedRecord[];
   addFeedRecord: (record: DailyFeedRecord) => Promise<void>;
+  bunkReadings: BunkReading[];
+  saveBunkReading: (reading: BunkReading) => Promise<void>;
   deleteFeedRecord: (id: string) => Promise<void>;
 
   // Fechamentos
@@ -183,6 +188,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [feedHistory, setFeedHistory] = useState<DailyFeedRecord[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [closings, setClosings] = useState<Closing[]>([]);
+  const [bunkReadings, setBunkReadings] = useState<BunkReading[]>([]);
 
   // ----- Auth bootstrap: lê sessão do Supabase + subscreve mudanças -----
   const refreshProfile = useCallback(async () => {
@@ -324,6 +330,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setMovements([]);
       setFeedHistory([]);
       setClosings([]);
+      setBunkReadings([]);
       setConfig(DEFAULT_CONFIG);
       return;
     }
@@ -342,6 +349,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         movsRes,
         feedRes,
         closingsRes,
+        bunkRes,
       ] = await Promise.all([
         supabase.from('fc_config').select('*').eq('owner_id', user.id).maybeSingle(),
         supabase.from('fc_lots').select('*'),
@@ -352,6 +360,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         supabase.from('fc_movements').select('*').order('date', { ascending: false }),
         supabase.from('fc_feed_records').select('*').order('date', { ascending: false }),
         supabase.from('fc_closings').select('*').order('closing_date', { ascending: false }),
+        supabase.from('fc_bunk_readings').select('*').order('date', { ascending: false }),
       ]);
 
       if (cancelled) return;
@@ -359,7 +368,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       // Se qualquer carga falhou, avisa o usuário — NUNCA mostra sistema vazio em silêncio
       const loadError =
         cfgRes.error || lotsRes.error || pensRes.error || ingsRes.error || dietsRes.error ||
-        catsRes.error || movsRes.error || feedRes.error || closingsRes.error;
+        catsRes.error || movsRes.error || feedRes.error || closingsRes.error || bunkRes.error;
       if (loadError) {
         console.error('[loadAll] erro ao carregar dados:', loadError);
         alert(
@@ -392,6 +401,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setFeedHistory(feedRes.data.map((r) => feedRecordFromDb(r as Record<string, unknown>)));
       if (closingsRes.data)
         setClosings(closingsRes.data.map((r) => closingFromDb(r as Record<string, unknown>)));
+      if (bunkRes.data)
+        setBunkReadings(bunkRes.data.map((r) => bunkReadingFromDb(r as Record<string, unknown>) as BunkReading));
 
       // 2. Subscriptions granulares (cada uma só atualiza seu próprio state)
       const channels: RealtimeChannel[] = [
@@ -403,6 +414,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         subscribeToTable<AnimalMovement>('fc_movements', setMovements, movementFromDb, user.id),
         subscribeToTable<DailyFeedRecord>('fc_feed_records', setFeedHistory, feedRecordFromDb, user.id),
         subscribeToTable<Closing>('fc_closings', setClosings, closingFromDb, user.id),
+        subscribeToTable<BunkReading>('fc_bunk_readings', setBunkReadings, (r) => bunkReadingFromDb(r) as BunkReading, user.id),
       ];
 
       // Config é singleton — listener separado
@@ -708,6 +720,21 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   // ----- Feed Records -----
+  const saveBunkReading = async (reading: BunkReading) => {
+    if (!user) return;
+    const finalId = `${reading.date}_${reading.lotId}`;
+    const final: BunkReading = { ...reading, id: finalId };
+    const { error } = await supabase
+      .from('fc_bunk_readings')
+      .upsert({ ...bunkReadingToDb(final), owner_id: user.id, updated_at: new Date().toISOString() }, { onConflict: 'id' });
+    if (error) throw error;
+    // Optimistic local update
+    setBunkReadings((prev) => {
+      const others = prev.filter((r) => r.id !== finalId);
+      return [final, ...others];
+    });
+  };
+
   const addFeedRecord = async (record: DailyFeedRecord) => {
     // Upsert: ID determinístico = date_lotId garante sobrescrita no mesmo dia/lote
     const recordId = `${record.date}_${record.lotId}`;
@@ -980,6 +1007,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         deleteMovement,
         feedHistory,
         addFeedRecord,
+        bunkReadings,
+        saveBunkReading,
         deleteFeedRecord,
         closings,
         upsertClosing,

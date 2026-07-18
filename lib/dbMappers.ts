@@ -230,3 +230,18 @@ export const closingToDb = (c: Partial<Closing>) =>
 
 export const closingFromDb = (row: Record<string, unknown>) =>
   dbToObj<Closing>(row, closingMap);
+
+// ---- BunkReading (leitura de cocho) ----
+export const bunkReadingFromDb = (row: Record<string, unknown>) => ({
+  id: String(row.id),
+  date: String(row.date),
+  lotId: String(row.lot_id),
+  score: Number(row.score),
+});
+
+export const bunkReadingToDb = (r: { id: string; date: string; lotId: string; score: number }) => ({
+  id: r.id,
+  date: r.date,
+  lot_id: r.lotId,
+  score: r.score,
+});

@@ -2,6 +2,7 @@ import React from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
 import Dashboard from './components/Dashboard';
+import BunkReadingPage from './components/BunkReading';
 import FeedSheet from './components/FeedSheet';
 import Reports from './components/Reports';
 import Settings from './components/Settings';
@@ -18,6 +19,7 @@ const App: React.FC = () => {
         <Routes>
           <Route path="/" element={<Layout />}>
             <Route index element={<Dashboard />} />
+            <Route path="bunk" element={<BunkReadingPage />} />
             <Route path="feed" element={<FeedSheet />} />
             <Route path="database" element={<LotDatabase />} />
             <Route path="nutrition" element={<Nutrition />} />

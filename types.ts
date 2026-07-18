@@ -10,6 +10,13 @@ export enum BunkScore {
   Four = 4     // '4' - Cocho cheio
 }
 
+export interface BunkReading {
+  id: string;        // `${date}_${lotId}`
+  date: string;
+  lotId: string;
+  score: BunkScore;
+}
+
 export enum FeedStatus {
   Underfed = 'UNDERFED',
   Optimal = 'OPTIMAL',

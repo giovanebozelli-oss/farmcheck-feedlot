@@ -19,7 +19,7 @@ export const generateZootecnicoPDF = (data: any[], date: string) => {
   // Helpers defensivos contra null/undefined/NaN
   const num = (v: any, decimals = 2) => {
     const n = Number(v);
-    return Number.isFinite(n) ? n.toFixed(decimals) : '0.00';
+    return Number.isFinite(n) ? n.toLocaleString('pt-BR', { minimumFractionDigits: decimals, maximumFractionDigits: decimals }) : '0,00';
   };
   const fmt = (v: any) => {
     const n = Number(v);
@@ -131,7 +131,7 @@ export const generateFichaTratoPDF = (entries: any[], date: string, treatmentPro
         : Array.from({ length: treatmentProportions.length }).map(() => entry.dietName || '');
 
     treatmentProportions.forEach((_, i) => {
-      const qty = predictedTotalMN > 0 ? (dropPredictions[i] || 0).toLocaleString() : '---';
+      const qty = predictedTotalMN > 0 ? (dropPredictions[i] || 0).toLocaleString('pt-BR') : '---';
       const dietLabel = dietsPerTrato[i] || '';
       // Linha 1: quantidade prevista | Linha 2: dieta (menor)
       tratoValues.push(qty + (dietLabel ? `\n${dietLabel}` : ''));
@@ -144,7 +144,7 @@ export const generateFichaTratoPDF = (entries: any[], date: string, treatmentPro
       entry.lotId.toUpperCase(),
       entry.headCount,
       entry.dietName,
-      predictedTotalMN > 0 ? predictedTotalMN.toLocaleString() : '---',
+      predictedTotalMN > 0 ? predictedTotalMN.toLocaleString('pt-BR') : '---',
       ...tratoValues,
       '', // Escore (manual)
     ];
@@ -267,7 +267,7 @@ export const generateInsumosPDF = (
   const tableData = data.map((row) => [
     row.name,
     row.totalQuantity.toLocaleString('pt-BR', { maximumFractionDigits: 0 }) + ' kg',
-    (row.totalQuantity / 1000).toFixed(3) + ' Ton',
+    (row.totalQuantity / 1000).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' Ton',
     'R$ ' + row.pricePerTon.toLocaleString('pt-BR', { minimumFractionDigits: 2 }),
     'R$ ' + row.totalCost.toLocaleString('pt-BR', { minimumFractionDigits: 2 }),
   ]);
@@ -276,7 +276,7 @@ export const generateInsumosPDF = (
   tableData.push([
     'TOTAL',
     totalQty.toLocaleString('pt-BR', { maximumFractionDigits: 0 }) + ' kg',
-    (totalQty / 1000).toFixed(3) + ' Ton',
+    (totalQty / 1000).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' Ton',
     '',
     'R$ ' + totalCost.toLocaleString('pt-BR', { minimumFractionDigits: 2 }),
   ]);
@@ -337,7 +337,7 @@ export const generateLancamentosTratosPDF = (data: LancamentoTratoRow[]) => {
 
   const num = (v: any, d = 2) => {
     const n = Number(v);
-    return Number.isFinite(n) ? n.toFixed(d) : '0.00';
+    return Number.isFinite(n) ? n.toLocaleString('pt-BR', { minimumFractionDigits: d, maximumFractionDigits: d }) : '0,00';
   };
 
   const tableData = data.map((r) => [
@@ -508,7 +508,7 @@ export const generateFechamentoPDF = (data: FechamentoExportData) => {
   const pageWidth = doc.internal.pageSize.getWidth();
   const num = (v: any, d = 2) => {
     const n = Number(v);
-    return Number.isFinite(n) ? n.toFixed(d) : '0.00';
+    return Number.isFinite(n) ? n.toLocaleString('pt-BR', { minimumFractionDigits: d, maximumFractionDigits: d }) : '0,00';
   };
   const fmtMoney = (v: number) => `R$ ${num(v, 2)}`;
 
@@ -703,7 +703,7 @@ export const generateFechamentoConsolidadoPDF = (rows: FechamentoConsolidadoRow[
   const pageWidth = doc.internal.pageSize.getWidth();
   const num = (v: any, d = 2) => {
     const n = Number(v);
-    return Number.isFinite(n) ? n.toFixed(d) : '0.00';
+    return Number.isFinite(n) ? n.toLocaleString('pt-BR', { minimumFractionDigits: d, maximumFractionDigits: d }) : '0,00';
   };
   const fmtMoney = (v: number) => `R$ ${num(v, 2)}`;
 

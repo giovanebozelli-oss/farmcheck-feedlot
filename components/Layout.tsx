@@ -3,7 +3,7 @@ import React from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { 
   LayoutDashboard, 
-  ClipboardList, 
+  ClipboardList, ClipboardCheck, 
   FileText, 
   Settings, 
   Menu,
@@ -72,13 +72,14 @@ const Layout: React.FC = () => {
 
   const navItems = [
     { to: "/", icon: <LayoutDashboard size={20} />, label: "Dashboard", adminOnly: false },
+    { to: "/bunk", icon: <ClipboardCheck size={20} />, label: "Leitura de Cocho", adminOnly: false },
     { to: "/feed", icon: <ClipboardList size={20} />, label: "Ficha de Trato", adminOnly: false },
-    { to: "/database", icon: <Database size={20} />, label: "Banco de Dados", adminOnly: false },
     { to: "/nutrition", icon: <Wheat size={20} />, label: "Nutrição", adminOnly: false },
     { to: "/movements", icon: <ArrowRightLeft size={20} />, label: "Movimentação de Rebanho", adminOnly: false },
     { to: "/reports", icon: <FileText size={20} />, label: "Relatório Zootécnico", adminOnly: false },
     { to: "/users", icon: <Users size={20} />, label: "Usuários", adminOnly: true },
     { to: "/settings", icon: <Settings size={20} />, label: "Estrutura & Parâmetros", adminOnly: false },
+    { to: "/database", icon: <Database size={20} />, label: "Banco de Dados", adminOnly: false },
   ].filter(item => !item.adminOnly || isAdmin);
 
   return (

@@ -196,7 +196,7 @@ const Dashboard: React.FC = () => {
         <KpiCard
           icon={<Wheat size={18} />}
           label="MS/Cab/Dia"
-          value={`${kpis.avgMS.toFixed(2)} kg`}
+          value={`${kpis.avgMS.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg`}
           accent="emerald"
           subtitle="média ponderada"
         />
@@ -268,7 +268,7 @@ const Dashboard: React.FC = () => {
                       }}>
                         <div style={{ fontWeight: 'bold', marginBottom: 4 }}>{d.date.split('-').reverse().join('/')}</div>
                         <div style={{ color: '#64748b' }}>
-                          CMS: <strong style={{ color: '#0f172a' }}>{d.cms.toFixed(2)} kg</strong>
+                          CMS: <strong style={{ color: '#0f172a' }}>{d.cms.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg</strong>
                         </div>
                         <div style={{ color: '#64748b' }}>
                           Custo: <strong style={{ color: '#0f172a' }}>{formatCurrency(d.cost)}</strong>
@@ -339,14 +339,14 @@ const Dashboard: React.FC = () => {
                     <td className="px-4 py-3 text-center font-mono font-bold">{row.heads}</td>
                     <td className="px-4 py-3 text-center font-mono">{row.dof}d</td>
                     <td className="px-4 py-3 text-center font-mono font-bold text-slate-700">
-                      {row.projW.toFixed(0)} kg
+                      {row.projW.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })} kg
                     </td>
                     <td className="px-4 py-3 text-emerald-700 font-bold text-[11px]">{row.dietName}</td>
                     <td className="px-4 py-3 text-center font-mono">
-                      {row.cms > 0 ? `${row.cms.toFixed(2)} kg` : <span className="text-slate-300">—</span>}
+                      {row.cms > 0 ? `${row.cms.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg` : <span className="text-slate-300">—</span>}
                     </td>
                     <td className="px-4 py-3 text-center font-mono">
-                      {row.pv > 0 ? `${row.pv.toFixed(2)}%` : <span className="text-slate-300">—</span>}
+                      {row.pv > 0 ? `${row.pv.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%` : <span className="text-slate-300">—</span>}
                     </td>
                     <td className="px-4 py-3 text-center">
                       {row.bunkScore !== undefined ? (

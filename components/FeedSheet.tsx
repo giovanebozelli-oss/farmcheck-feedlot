@@ -12,7 +12,8 @@ import {
   calculateAllHeadCounts,
   sortLotsByPen
 } from '../utils';
-import { Calendar, Save, AlertCircle, CheckCircle, Calculator, Info, FileDown, Loader2, Copy } from 'lucide-react';
+import { Calendar, Save, AlertCircle, CheckCircle, Calculator, Info, FileDown, Loader2 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { generateFichaTratoPDF } from '../utils/pdfGenerator';
 import { useSessionState } from '../lib/useSessionState';
 import PenReorderControls from './PenReorderControls';
@@ -118,7 +119,7 @@ const cleanOldDrafts = () => {
 };
 
 const FeedSheet: React.FC = () => {
-  const { lots, pens, diets, config, feedHistory, getActiveHeadCount, addFeedRecord, movements, updateLot } = useAppStore();
+  const { lots, pens, diets, config, feedHistory, getActiveHeadCount, addFeedRecord, movements, updateLot, bunkReadings } = useAppStore();
   const [selectedDate, setSelectedDate] = useSessionState<string>('feedsheet.date', new Date().toISOString().split('T')[0]);
   const [entries, setEntries] = useState<SheetEntry[]>([]);
 
@@ -233,6 +234,10 @@ const FeedSheet: React.FC = () => {
         };
       }
 
+      // Score do dia vem da tela "Leitura de Cocho" (fc_bunk_readings)
+      const dayReading = bunkReadings.find(r => r.lotId === lot.id && r.date === selectedDate);
+      const dayScore = (dayReading ? dayReading.score : BunkScore.Zero) as BunkScore;
+
       // Sem registro salvo: tenta hidratar do draft (não-salvo)
       const draft = drafts[lot.id];
       if (draft) {
@@ -249,7 +254,7 @@ const FeedSheet: React.FC = () => {
             ? draft.dietsPerTrato
             : Array(numTratos).fill(diet?.id || ''),
           prevConsumptionMS: prevConsMS,
-          bunkScore: (draft.bunkScore ?? BunkScore.Zero) as BunkScore,
+          bunkScore: dayScore,
           drops: (draft.drops && draft.drops.length === numTratos)
             ? draft.drops
             : Array(numTratos).fill(0),
@@ -271,7 +276,7 @@ const FeedSheet: React.FC = () => {
         dietCost: diet?.calculatedCostPerKg || 0,
         dietsPerTrato: Array(numTratos).fill(diet?.id || ''),
         prevConsumptionMS: prevConsMS,
-        bunkScore: BunkScore.Zero,
+        bunkScore: dayScore,
         drops: Array(numTratos).fill(0),
         daysOnFeed,
         projectedWeight,
@@ -281,7 +286,7 @@ const FeedSheet: React.FC = () => {
     });
 
     setEntries(newEntries);
-  }, [selectedDate, lots, pens, diets, feedHistory, config, headCounts]); // Inclui headCounts para reatividade a movements
+  }, [selectedDate, lots, pens, diets, feedHistory, config, headCounts, bunkReadings]); // Inclui headCounts e bunkReadings para reatividade
 
   // ======================================================================
   // PERSISTÊNCIA DE RASCUNHOS (localStorage) — não perde valores digitados
@@ -295,12 +300,10 @@ const FeedSheet: React.FC = () => {
       if (e.isSaved) return; // ignora os salvos
       const hasInput =
         (e.drops || []).some((d) => (d || 0) > 0) ||
-        e.bunkScore !== BunkScore.Zero ||
         (e.dietsPerTrato || []).some((d) => d !== e.dietId);
       if (hasInput) {
         drafts[e.lotId] = {
           drops: e.drops,
-          bunkScore: e.bunkScore,
           dietsPerTrato: e.dietsPerTrato,
           dietId: e.dietId,
         };
@@ -437,15 +440,6 @@ const FeedSheet: React.FC = () => {
     });
   };
 
-  const handleBunkScoreChange = (index: number, value: string) => {
-    const score = parseFloat(value) as BunkScore;
-    setEntries(prev => {
-      const n = [...prev];
-      n[index] = { ...n[index], bunkScore: score };
-      return n;
-    });
-  };
-
   const handleInputChange = (index: number, dropIndex: number, value: string) => {
     const val = parseInt(value) || 0;
     setEntries(prev => {
@@ -455,59 +449,6 @@ const FeedSheet: React.FC = () => {
       n[index] = { ...n[index], drops: newDrops };
       return n;
     });
-  };
-
-  /**
-   * #5 / #6 — Replicar dados (escore + dieta principal + step intra-dia) de outra data
-   * para todos os lotes ou apenas um.
-   * NÃO replica os "drops" (realizado) — esses ficam zerados pro tratador preencher.
-   */
-  const replicateFromDate = (sourceDate: string, targetIndex?: number) => {
-    setEntries(prev => {
-      return prev.map((entry, idx) => {
-        // Se foi pedido apenas um lote específico, ignora os outros
-        if (targetIndex !== undefined && idx !== targetIndex) return entry;
-
-        // Acha o último registro do lote naquela data
-        const sourceRecord = feedHistory.find(
-          r => r.date === sourceDate && r.lotId === entry.lotId
-        );
-        if (!sourceRecord) return entry; // sem dados pra replicar nesse lote
-
-        const numTratos = entry.dietsPerTrato.length;
-        const sourceDiets = (sourceRecord as any).dietsPerTrato as string[] | undefined;
-        const newDietsPerTrato =
-          sourceDiets && sourceDiets.length === numTratos
-            ? [...sourceDiets]
-            : Array(numTratos).fill(sourceRecord.dietId);
-
-        return {
-          ...entry,
-          bunkScore: sourceRecord.bunkScoreYesterday,
-          dietId: sourceRecord.dietId,
-          dietsPerTrato: newDietsPerTrato,
-          isSaved: false, // marca como não salvo (precisa salvar de novo na data atual)
-        };
-      });
-    });
-  };
-
-  // Modal de replicação (geral ou individual)
-  const [showReplicateModal, setShowReplicateModal] = useState<{ open: boolean; targetIndex?: number }>({ open: false });
-  const [replicateSourceDate, setReplicateSourceDate] = useState<string>(() => {
-    // Default: dia anterior à data selecionada
-    const d = new Date(selectedDate);
-    d.setDate(d.getDate() - 1);
-    return d.toISOString().split('T')[0];
-  });
-
-  const handleConfirmReplicate = () => {
-    if (!replicateSourceDate || replicateSourceDate >= selectedDate) {
-      alert('Escolha uma data ANTERIOR à data atual de lançamento.');
-      return;
-    }
-    replicateFromDate(replicateSourceDate, showReplicateModal.targetIndex);
-    setShowReplicateModal({ open: false });
   };
 
   const handleDietChange = async (index: number, dietId: string) => {
@@ -558,9 +499,9 @@ const FeedSheet: React.FC = () => {
       const suggestion = livePred.lastTratoSuggestion;
 
       const confirmed = window.confirm(
-        `O Trato ${lastIdx + 1} está vazio. Deseja usar a sugestão de ${suggestion.toLocaleString()} kg ` +
+        `O Trato ${lastIdx + 1} está vazio. Deseja usar a sugestão de ${suggestion.toLocaleString('pt-BR')} kg ` +
         `(valor calculado pra atingir a meta de MS do dia)?\n\n` +
-        `OK = usar ${suggestion.toLocaleString()} kg como realizado\n` +
+        `OK = usar ${suggestion.toLocaleString('pt-BR')} kg como realizado\n` +
         `Cancelar = salvar com 0 (trato não fornecido)`
       );
 
@@ -758,16 +699,6 @@ const FeedSheet: React.FC = () => {
             <span className="font-medium">Exportar PDF</span>
           </button>
 
-          <button
-            onClick={() => setShowReplicateModal({ open: true })}
-            disabled={entries.length === 0}
-            className="flex items-center gap-2 bg-white border border-slate-300 px-4 py-2 rounded-lg text-slate-700 hover:bg-slate-50 transition-colors shadow-sm disabled:opacity-50"
-            title="Replicar escore, dieta e step de outra data para TODOS os lotes"
-          >
-            <Copy size={18} className="text-emerald-600" />
-            <span className="font-medium">Replicar</span>
-          </button>
-
           <div className="flex items-center gap-2 bg-white p-2 rounded-lg border shadow-sm">
             <Calendar className="text-slate-400" size={20} />
             <input 
@@ -779,48 +710,6 @@ const FeedSheet: React.FC = () => {
           </div>
         </div>
       </div>
-
-      {/* Modal de Replicação */}
-      {showReplicateModal.open && (
-        <div className="fixed inset-0 bg-slate-900/70 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
-            <h3 className="text-lg font-black uppercase tracking-tight text-slate-900 mb-2">
-              Replicar lançamento
-            </h3>
-            <p className="text-sm text-slate-600 mb-4">
-              {showReplicateModal.targetIndex !== undefined ? (
-                <>Replica escore + dieta + step do lote <strong>{entries[showReplicateModal.targetIndex]?.lotId.toUpperCase()}</strong> a partir da data escolhida.</>
-              ) : (
-                <>Replica escore + dieta + step de <strong>TODOS</strong> os lotes ativos a partir da data escolhida.</>
-              )}
-              <br />
-              <span className="text-xs text-slate-500 italic">Os realizados (kg fornecidos) ficam zerados para preencher hoje.</span>
-            </p>
-            <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Data de origem</label>
-            <input
-              type="date"
-              value={replicateSourceDate}
-              max={selectedDate}
-              onChange={(e) => setReplicateSourceDate(e.target.value)}
-              className="w-full px-3 py-2 border-2 border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none mb-4"
-            />
-            <div className="flex gap-2">
-              <button
-                onClick={() => setShowReplicateModal({ open: false })}
-                className="flex-1 px-4 py-2 rounded-lg border-2 border-slate-200 text-slate-600 font-bold hover:bg-slate-50"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={handleConfirmReplicate}
-                className="flex-1 px-4 py-2 rounded-lg bg-emerald-600 text-white font-bold hover:bg-emerald-700"
-              >
-                Replicar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Main Table — DESKTOP/TABLET (≥ md, evita scroll horizontal em mobile) */}
       <div className="hidden md:block bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
@@ -933,31 +822,28 @@ const FeedSheet: React.FC = () => {
                           <span className="text-[10px] font-black text-blue-600 uppercase tracking-tighter truncate max-w-[120px]" title={entry.dietName}>
                             {entry.dietName}
                           </span>
-                          <span className="text-[10px] text-slate-400 font-bold">MS: {entry.dietMS.toFixed(1)}%</span>
+                          <span className="text-[10px] text-slate-400 font-bold">MS: {entry.dietMS.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%</span>
                         </div>
                       </div>
                     </td>
                     
-                    {/* Bunk Score Input (F-03 Usage) */}
+                    {/* Escore vem da tela "Leitura de Cocho" (somente leitura aqui) */}
                     <td className="px-4 py-4 text-center">
-                      <select 
-                        value={entry.bunkScore}
-                        onChange={(e) => handleBunkScoreChange(index, e.target.value)}
-                        disabled={entry.isSaved}
-                        className="w-full p-2 border rounded text-xs text-center font-medium bg-white focus:ring-1 focus:ring-emerald-500 outline-none"
-                      >
-                        {(config.bunkScoreAdjustments || []).map(rule => (
-                          <option key={rule.score} value={rule.score}>
-                             Sc {rule.score} ({rule.adjustmentPercentage > 0 ? '+' : ''}{rule.adjustmentPercentage}%)
-                          </option>
-                        ))}
-                      </select>
+                      <div className="flex flex-col items-center gap-0.5">
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-lg bg-slate-100 text-slate-800 text-xs font-black">
+                          Sc {String(entry.bunkScore).replace('.', ',')}
+                        </span>
+                        <span className={`text-[10px] font-bold ${adjustment > 0 ? 'text-emerald-600' : adjustment < 0 ? 'text-red-500' : 'text-slate-400'}`}>
+                          {adjustment > 0 ? '+' : ''}{String(adjustment).replace('.', ',')}%
+                        </span>
+                        <Link to="/bunk" className="text-[9px] text-blue-500 hover:underline">alterar</Link>
+                      </div>
                     </td>
 
                     <td className="px-4 py-4 text-center bg-slate-50/50">
                       <div className="flex flex-col items-center group relative cursor-help">
                         <span className="font-mono text-lg font-semibold text-slate-700">
-                          {predictedTotalMN.toLocaleString()}
+                          {predictedTotalMN.toLocaleString('pt-BR')}
                         </span>
                         {adjustment !== 0 && (
                           <span className={`text-[10px] font-bold ${adjustment > 0 ? 'text-emerald-600' : 'text-red-500'}`}>
@@ -967,10 +853,10 @@ const FeedSheet: React.FC = () => {
                         {/* Tooltip for F-13 logic explanation */}
                         <div className="absolute bottom-full mb-2 hidden group-hover:block w-48 bg-slate-800 text-white text-xs p-2 rounded z-10 text-left">
                           <p className="font-bold border-b border-slate-600 pb-1 mb-1">Cálculo (F-13)</p>
-                          <p>Cons. Anterior (MS): {entry.prevConsumptionMS.toFixed(2)} kg</p>
+                          <p>Cons. Anterior (MS): {entry.prevConsumptionMS.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg</p>
                           <p>Correção: {adjustment}%</p>
-                          <p>Meta MS: {predictedMSPerHead.toFixed(2)} kg</p>
-                          <p>Meta MN/cab: {predictedMNPerHead.toFixed(2)} kg</p>
+                          <p>Meta MS: {predictedMSPerHead.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg</p>
+                          <p>Meta MN/cab: {predictedMNPerHead.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg</p>
                         </div>
                       </div>
                     </td>
@@ -997,7 +883,7 @@ const FeedSheet: React.FC = () => {
                         <td key={dropIdx} className="px-4 py-4 text-center">
                           <div className="flex flex-col items-center gap-1">
                             <span className={`text-[10px] font-bold ${isLastAutoAdjusted ? 'text-emerald-600' : 'text-slate-400'}`}>
-                              {isLastAutoAdjusted ? '⚖ Sugerido' : 'Prev'}: {dropPrediction.toLocaleString()}
+                              {isLastAutoAdjusted ? '⚖ Sugerido' : 'Prev'}: {dropPrediction.toLocaleString('pt-BR')}
                             </span>
                             <input
                                 type="number"
@@ -1005,7 +891,7 @@ const FeedSheet: React.FC = () => {
                                 onChange={(e) => handleInputChange(index, dropIdx, e.target.value)}
                                 disabled={entry.isSaved}
                                 className={`w-20 px-2 py-1 border rounded text-center focus:ring-2 focus:ring-emerald-500 outline-none disabled:bg-slate-100 ${isLast ? 'border-emerald-300 bg-emerald-50/30' : ''}`}
-                                placeholder={dropPrediction.toFixed(0)}
+                                placeholder={dropPrediction.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                               />
                             {/* Dropdown discreto de dieta por trato (step intra-dia) */}
                             <select
@@ -1029,7 +915,7 @@ const FeedSheet: React.FC = () => {
                     })}
                     <td className="px-4 py-4 text-center">
                       <span className={`font-mono text-lg font-bold ${entry.isSaved ? 'text-slate-800' : 'text-slate-400'}`}>
-                        {totalActual > 0 ? totalActual.toLocaleString() : '-'}
+                        {totalActual > 0 ? totalActual.toLocaleString('pt-BR') : '-'}
                       </span>
                     </td>
                     <td className="px-4 py-4 text-center">
@@ -1039,7 +925,7 @@ const FeedSheet: React.FC = () => {
                           ${isWithinLimits ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}
                         `}>
                           {isWithinLimits ? <CheckCircle size={12} /> : <AlertCircle size={12} />}
-                          {deviation > 0 ? '+' : ''}{deviation.toFixed(1)}%
+                          {deviation > 0 ? '+' : ''}{deviation.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%
                         </div>
                       )}
                     </td>
@@ -1062,14 +948,6 @@ const FeedSheet: React.FC = () => {
                           ) : (
                             <Save size={18} />
                           )}
-                        </button>
-                        <button
-                          onClick={() => setShowReplicateModal({ open: true, targetIndex: index })}
-                          disabled={entry.isSaved}
-                          className="p-2 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-emerald-600 transition-colors disabled:opacity-30"
-                          title="Replicar escore/dieta/step de outra data só pra este lote"
-                        >
-                          <Copy size={16} />
                         </button>
                       </div>
                     </td>
@@ -1144,26 +1022,25 @@ const FeedSheet: React.FC = () => {
                 )}
               </div>
 
-              {/* Leitura de cocho */}
-              <div className="p-3 border-b">
-                <div className="text-[10px] font-bold text-slate-500 uppercase mb-1">Leitura Cocho (escore ontem)</div>
-                <select
-                  value={entry.bunkScore}
-                  onChange={(e) => handleBunkScoreChange(index, e.target.value)}
-                  disabled={entry.isSaved}
-                  className="w-full px-3 py-2 border rounded-lg text-sm font-bold focus:ring-2 focus:ring-emerald-500 outline-none disabled:bg-slate-100"
-                >
-                  {[0, 0.5, 1, 1.5, 2, 3, 4].map(s => (
-                    <option key={s} value={s}>Escore {s} ({adjustment > 0 && s === entry.bunkScore ? '+' : ''}{getAdjustmentForScore(s as any, config.bunkScoreAdjustments || [])}%)</option>
-                  ))}
-                </select>
+              {/* Escore vem da tela "Leitura de Cocho" (somente leitura aqui) */}
+              <div className="p-3 border-b flex items-center justify-between">
+                <div>
+                  <div className="text-[10px] font-bold text-slate-500 uppercase">Leitura Cocho</div>
+                  <div className="text-sm font-black text-slate-800">
+                    Sc {String(entry.bunkScore).replace('.', ',')}
+                    <span className={`ml-2 text-[11px] font-bold ${adjustment > 0 ? 'text-emerald-600' : adjustment < 0 ? 'text-red-500' : 'text-slate-400'}`}>
+                      {adjustment > 0 ? '+' : ''}{String(adjustment).replace('.', ',')}%
+                    </span>
+                  </div>
+                </div>
+                <Link to="/bunk" className="text-[11px] text-blue-600 font-bold hover:underline">Alterar</Link>
               </div>
 
               {/* Tratos */}
               <div className="p-3 border-b">
                 <div className="flex items-center justify-between mb-2">
                   <div className="text-[10px] font-bold text-slate-500 uppercase">Tratos (kg MN)</div>
-                  <div className="text-[10px] text-slate-400">Previsto: <strong className="text-slate-700">{totalPredicted.toLocaleString()}</strong></div>
+                  <div className="text-[10px] text-slate-400">Previsto: <strong className="text-slate-700">{totalPredicted.toLocaleString('pt-BR')}</strong></div>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   {entry.drops.map((drop, dropIdx) => {
@@ -1209,22 +1086,14 @@ const FeedSheet: React.FC = () => {
               <div className="p-3 flex items-center justify-between">
                 <div>
                   <div className="text-[10px] text-slate-400 uppercase">Realizado</div>
-                  <div className="font-mono text-lg font-bold text-slate-800">{totalActual > 0 ? totalActual.toLocaleString() : '-'}</div>
+                  <div className="font-mono text-lg font-bold text-slate-800">{totalActual > 0 ? totalActual.toLocaleString('pt-BR') : '-'}</div>
                   {totalActual > 0 && (
                     <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold mt-1 ${isWithinLimits ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
-                      {deviation > 0 ? '+' : ''}{deviation.toFixed(1)}%
+                      {deviation > 0 ? '+' : ''}{deviation.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%
                     </div>
                   )}
                 </div>
                 <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setShowReplicateModal({ open: true, targetIndex: index })}
-                    disabled={entry.isSaved}
-                    className="p-2 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-30"
-                    title="Replicar de outra data"
-                  >
-                    <Copy size={16} />
-                  </button>
                   <button
                     onClick={() => handleSave(index)}
                     disabled={entry.isSaved || entry.isSaving || totalActual === 0}

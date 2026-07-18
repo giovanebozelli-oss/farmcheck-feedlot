@@ -40,39 +40,26 @@ const TratoLogo: React.FC<LogoProps> = ({ width = 420, className = '', showTagli
           strokeWidth="2"
           fill="none"
         />
-        {/* Palavra "GMC" — "GM" branco, "C" esmeralda */}
+        {/* Palavra "GMC" — "GM" branco, "C" esmeralda, sem espaçamento extra */}
         <text
-          x="205"
-          y="115"
-          fill="white"
-          style={{ font: 'bold 92px "Georgia", "Times New Roman", serif', letterSpacing: '2px' }}
+          x="250"
+          y="118"
+          style={{ font: 'bold 96px "Georgia", "Times New Roman", serif' }}
           textAnchor="middle"
         >
-          GM
-        </text>
-        <text
-          x="330"
-          y="115"
-          fill="#10b981"
-          style={{ font: 'bold 92px "Georgia", "Times New Roman", serif' }}
-          textAnchor="middle"
-        >
-          C
+          <tspan fill="white">GM</tspan>
+          <tspan fill="#10b981">C</tspan>
         </text>
         {showTagline && (
-          <>
-            <line x1="70" y1="152" x2="135" y2="152" stroke="#10b981" strokeWidth="3" />
-            <text
-              x="250"
-              y="160"
-              fill="#10b981"
-              style={{ font: 'bold 20px ui-sans-serif, system-ui', letterSpacing: '4px' }}
-              textAnchor="middle"
-            >
-              GESTÃO DE CONFINAMENTO
-            </text>
-            <line x1="365" y1="152" x2="430" y2="152" stroke="#10b981" strokeWidth="3" />
-          </>
+          <text
+            x="250"
+            y="156"
+            fill="#10b981"
+            style={{ font: 'bold 21px ui-sans-serif, system-ui', letterSpacing: '1px' }}
+            textAnchor="middle"
+          >
+            GESTÃO DE CONFINAMENTO
+          </text>
         )}
       </svg>
     </div>
