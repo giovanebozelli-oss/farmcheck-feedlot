@@ -114,7 +114,7 @@ export async function signUpUser(params: {
     return {
       error:
         'Este e-mail já está cadastrado em outro sistema (ex: Visit Report) com uma senha diferente. ' +
-        'Pra usar no Trato, digite a MESMA senha do outro sistema, ' +
+        'Pra usar no GMC, digite a MESMA senha do outro sistema, ' +
         'ou cadastre-se com um e-mail diferente.',
     };
   }
@@ -236,6 +236,8 @@ export async function setUserAdmin(targetId: string, makeAdmin: boolean): Promis
 /** Traduz mensagens comuns do Supabase Auth pra português. */
 function traduzErroAuth(msg: string): string {
   const m = msg.toLowerCase();
+  if (m.includes('failed to fetch') || m.includes('network'))
+    return 'Servidor temporariamente indisponível. Aguarde 1-2 minutos e tente novamente. Seus dados estão seguros.';
   if (m.includes('invalid login credentials')) return 'E-mail ou senha incorretos.';
   if (m.includes('email rate limit')) return 'Muitas tentativas. Aguarde alguns minutos.';
   if (m.includes('password should be at least'))

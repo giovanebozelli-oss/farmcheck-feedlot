@@ -318,7 +318,7 @@ export const generateFechamentoExcel = (data: FechamentoExportDataXLS) => {
   const metaRows = [
     { Campo: 'Gerado em', Valor: new Date().toLocaleString('pt-BR') },
     { Campo: 'Lote', Valor: data.lotName },
-    { Campo: 'Aplicativo', Valor: 'Trato — Gestão de Confinamento' },
+    { Campo: 'Aplicativo', Valor: 'GMC — Gestão de Confinamento' },
   ];
   const wsMeta = XLSX.utils.json_to_sheet(metaRows);
   wsMeta['!cols'] = [{ wch: 20 }, { wch: 30 }];

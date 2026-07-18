@@ -172,7 +172,7 @@ const Layout: React.FC = () => {
             <div className="flex flex-col">
               <div className="flex items-center gap-2">
                 <span className="text-xs font-black text-emerald-600 uppercase tracking-widest leading-none">
-                  Trato — Gestão de Confinamento
+                  GMC — Gestão de Confinamento
                 </span>
                 <span className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-emerald-500' : 'bg-red-400'} animate-pulse`}></span>
               </div>

@@ -1,6 +1,6 @@
 {
-  "name": "Trato — Gestão de Confinamento",
-  "short_name": "Trato",
+  "name": "GMC — Gestão de Confinamento",
+  "short_name": "GMC",
   "description": "Sistema de gestão de feedlot bovino",
   "start_url": "/",
   "display": "standalone",

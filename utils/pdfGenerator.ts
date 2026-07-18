@@ -8,7 +8,7 @@ export const generateZootecnicoPDF = (data: any[], date: string) => {
   // Header
   doc.setFontSize(20);
   doc.setTextColor(16, 185, 129); // Emerald-600
-  doc.text('Trato — Gestão de Confinamento', 14, 20);
+  doc.text('GMC — Gestão de Confinamento', 14, 20);
   
   doc.setFontSize(14);
   doc.setTextColor(100);
@@ -81,7 +81,7 @@ export const generateFichaTratoPDF = (entries: any[], date: string, treatmentPro
   // Cabeçalho
   doc.setFontSize(18);
   doc.setTextColor(16, 185, 129);
-  doc.text('Trato — Gestão de Confinamento', 14, 18);
+  doc.text('GMC — Gestão de Confinamento', 14, 18);
 
   doc.setFontSize(13);
   doc.setTextColor(80);
@@ -244,7 +244,7 @@ export const generateInsumosPDF = (
 
   doc.setFontSize(18);
   doc.setTextColor(16, 185, 129);
-  doc.text('Trato — Gestão de Confinamento', 14, 20);
+  doc.text('GMC — Gestão de Confinamento', 14, 20);
 
   doc.setFontSize(13);
   doc.setTextColor(80);
@@ -327,7 +327,7 @@ export const generateLancamentosTratosPDF = (data: LancamentoTratoRow[]) => {
 
   doc.setFontSize(18);
   doc.setTextColor(16, 185, 129);
-  doc.text('Trato — Gestão de Confinamento', 14, 18);
+  doc.text('GMC — Gestão de Confinamento', 14, 18);
   doc.setFontSize(13);
   doc.setTextColor(80);
   doc.text('Lançamentos — Histórico de Tratos', 14, 26);
@@ -423,7 +423,7 @@ export const generateLancamentosMovimentosPDF = (data: LancamentoMovimentoRow[])
 
   doc.setFontSize(18);
   doc.setTextColor(16, 185, 129);
-  doc.text('Trato — Gestão de Confinamento', 14, 18);
+  doc.text('GMC — Gestão de Confinamento', 14, 18);
   doc.setFontSize(13);
   doc.setTextColor(80);
   doc.text('Lançamentos — Movimentação Animal', 14, 26);
@@ -515,7 +515,7 @@ export const generateFechamentoPDF = (data: FechamentoExportData) => {
   // ===== Cabeçalho =====
   doc.setFontSize(18);
   doc.setTextColor(16, 185, 129);
-  doc.text('Trato — Gestão de Confinamento', 14, 18);
+  doc.text('GMC — Gestão de Confinamento', 14, 18);
 
   doc.setFontSize(13);
   doc.setTextColor(40, 40, 40);
@@ -673,7 +673,7 @@ export const generateFechamentoPDF = (data: FechamentoExportData) => {
   doc.setFontSize(7);
   doc.setTextColor(150);
   doc.text(`Gerado em ${new Date().toLocaleString('pt-BR')}`, 14, pageHeight - 10);
-  doc.text('Trato — Gestão de Confinamento', pageWidth - 14, pageHeight - 10, { align: 'right' });
+  doc.text('GMC — Gestão de Confinamento', pageWidth - 14, pageHeight - 10, { align: 'right' });
 
   doc.save(`fechamento-${data.lotName.replace(/\s+/g, '-')}-${data.closingDate}.pdf`);
 };
@@ -710,7 +710,7 @@ export const generateFechamentoConsolidadoPDF = (rows: FechamentoConsolidadoRow[
   // Cabeçalho
   doc.setFontSize(18);
   doc.setTextColor(16, 185, 129);
-  doc.text('Trato — Gestão de Confinamento', 14, 18);
+  doc.text('GMC — Gestão de Confinamento', 14, 18);
   doc.setFontSize(13);
   doc.setTextColor(40);
   doc.text('Fechamento Consolidado — Todos os Lotes', 14, 26);
@@ -839,7 +839,7 @@ export const generateFechamentoConsolidadoPDF = (rows: FechamentoConsolidadoRow[
   const pageHeight = doc.internal.pageSize.getHeight();
   doc.setFontSize(7);
   doc.setTextColor(150);
-  doc.text('Trato — Gestão de Confinamento', pageWidth - 14, pageHeight - 8, { align: 'right' });
+  doc.text('GMC — Gestão de Confinamento', pageWidth - 14, pageHeight - 8, { align: 'right' });
 
   doc.save(`fechamento-consolidado-${new Date().toISOString().split('T')[0]}.pdf`);
 };

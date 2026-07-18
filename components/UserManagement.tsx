@@ -134,7 +134,7 @@ const UserManagement: React.FC = () => {
           <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
             <Users size={24} className="text-emerald-600" /> Usuários
           </h1>
-          <p className="text-slate-500 text-sm">Gerencie os usuários do sistema Trato</p>
+          <p className="text-slate-500 text-sm">Gerencie os usuários do sistema GMC</p>
         </div>
         <button
           onClick={refresh}

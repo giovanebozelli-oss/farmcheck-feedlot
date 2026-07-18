@@ -459,7 +459,10 @@ const Settings: React.FC = () => {
   const [resetting, setResetting] = useState(false);
 
   const handleReset = async () => {
-    if (window.confirm("ATENÇÃO: Isso excluirá TODOS os Lotes, Movimentações, Fichas de Trato, Estruturas, Categorias, Dietas e Ingredientes para iniciar o sistema TOTALMENTE ZERADO. Deseja continuar?")) {
+    const typed = window.prompt(
+      "ATENÇÃO: isso excluirá os Lotes, Movimentações, Fichas de Trato, Estruturas, Categorias, Dietas e Ingredientes DO SEU confinamento (dados de outros usuários não são afetados).\n\nEsta ação NÃO pode ser desfeita.\n\nPara confirmar, digite: ZERAR"
+    );
+    if (typed !== null && typed.trim().toUpperCase() === 'ZERAR') {
       setResetting(true);
       try {
         await clearOperationalData();
@@ -507,7 +510,7 @@ const Settings: React.FC = () => {
          <div className="bg-red-50 p-6 rounded-2xl border border-red-100 flex flex-col md:flex-row items-center justify-between gap-6">
             <div>
                <h3 className="text-red-800 font-black uppercase italic tracking-tighter text-lg">Zona de Perigo: Redefinição Total</h3>
-               <p className="text-red-600 text-sm font-medium">Isso apagará permanentemente todos os registros do sistema (Lotes, Dietas, Baias, Histórico). 
+               <p className="text-red-600 text-sm font-medium">Isso apagará permanentemente os registros do SEU confinamento (Lotes, Dietas, Baias, Histórico). É necessário digitar ZERAR para confirmar. 
                <br/><span className="font-bold">Atenção:</span> Esta ação não pode ser desfeita.</p>
             </div>
             <button 
@@ -515,7 +518,7 @@ const Settings: React.FC = () => {
               onClick={handleReset}
               className={`px-8 py-3 rounded-xl font-black uppercase tracking-widest text-sm transition-all shadow-lg ${resetting ? 'bg-slate-300 text-slate-500' : 'bg-red-600 text-white hover:bg-red-700 active:scale-95'}`}
             >
-              {resetting ? 'Resetando...' : 'Zerar Todo o Banco de Dados'}
+              {resetting ? 'Resetando...' : 'Zerar Meus Dados'}
             </button>
          </div>
       </div>

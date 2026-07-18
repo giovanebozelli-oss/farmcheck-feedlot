@@ -135,13 +135,14 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 function subscribeToTable<T extends { id: string }>(
   table: string,
   setState: React.Dispatch<React.SetStateAction<T[]>>,
-  fromDb: (row: Record<string, unknown>) => T
+  fromDb: (row: Record<string, unknown>) => T,
+  ownerId: string
 ): RealtimeChannel {
   return supabase
     .channel(`fc_${table}_changes`)
     .on(
       'postgres_changes',
-      { event: '*', schema: 'public', table },
+      { event: '*', schema: 'public', table, filter: `owner_id=eq.${ownerId}` },
       (payload) => {
         const event = payload.eventType;
         if (event === 'INSERT') {
@@ -342,7 +343,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         feedRes,
         closingsRes,
       ] = await Promise.all([
-        supabase.from('fc_config').select('*').eq('id', 'global').maybeSingle(),
+        supabase.from('fc_config').select('*').eq('owner_id', user.id).maybeSingle(),
         supabase.from('fc_lots').select('*'),
         supabase.from('fc_pens').select('*'),
         supabase.from('fc_ingredients').select('*'),
@@ -354,6 +355,27 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       ]);
 
       if (cancelled) return;
+
+      // Se qualquer carga falhou, avisa o usuário — NUNCA mostra sistema vazio em silêncio
+      const loadError =
+        cfgRes.error || lotsRes.error || pensRes.error || ingsRes.error || dietsRes.error ||
+        catsRes.error || movsRes.error || feedRes.error || closingsRes.error;
+      if (loadError) {
+        console.error('[loadAll] erro ao carregar dados:', loadError);
+        alert(
+          'Não foi possível carregar seus dados do servidor.\n' +
+          'Seus dados NÃO foram perdidos — verifique sua conexão e recarregue a página.'
+        );
+        return;
+      }
+
+      // Config é por usuário: se ainda não existe, cria com os padrões
+      if (!cfgRes.data) {
+        const { error: cfgInsertErr } = await supabase
+          .from('fc_config')
+          .insert({ id: user.id, owner_id: user.id, ...configToDb(DEFAULT_CONFIG) });
+        if (cfgInsertErr) console.error('[loadAll] erro ao criar config padrão:', cfgInsertErr);
+      }
 
       if (cfgRes.data) setConfig(configFromDb(cfgRes.data as Record<string, unknown>));
       if (lotsRes.data) setLots(lotsRes.data.map((r) => lotFromDb(r as Record<string, unknown>)));
@@ -373,14 +395,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
       // 2. Subscriptions granulares (cada uma só atualiza seu próprio state)
       const channels: RealtimeChannel[] = [
-        subscribeToTable<Lot>('fc_lots', setLots, lotFromDb),
-        subscribeToTable<Pen>('fc_pens', setPens, penFromDb),
-        subscribeToTable<Ingredient>('fc_ingredients', setIngredients, ingredientFromDb),
-        subscribeToTable<Diet>('fc_diets', setDiets, dietFromDb),
-        subscribeToTable<Category>('fc_categories', setCategories, categoryFromDb),
-        subscribeToTable<AnimalMovement>('fc_movements', setMovements, movementFromDb),
-        subscribeToTable<DailyFeedRecord>('fc_feed_records', setFeedHistory, feedRecordFromDb),
-        subscribeToTable<Closing>('fc_closings', setClosings, closingFromDb),
+        subscribeToTable<Lot>('fc_lots', setLots, lotFromDb, user.id),
+        subscribeToTable<Pen>('fc_pens', setPens, penFromDb, user.id),
+        subscribeToTable<Ingredient>('fc_ingredients', setIngredients, ingredientFromDb, user.id),
+        subscribeToTable<Diet>('fc_diets', setDiets, dietFromDb, user.id),
+        subscribeToTable<Category>('fc_categories', setCategories, categoryFromDb, user.id),
+        subscribeToTable<AnimalMovement>('fc_movements', setMovements, movementFromDb, user.id),
+        subscribeToTable<DailyFeedRecord>('fc_feed_records', setFeedHistory, feedRecordFromDb, user.id),
+        subscribeToTable<Closing>('fc_closings', setClosings, closingFromDb, user.id),
       ];
 
       // Config é singleton — listener separado
@@ -388,9 +410,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         .channel('fc_config_changes')
         .on(
           'postgres_changes',
-          { event: '*', schema: 'public', table: 'fc_config' },
+          { event: '*', schema: 'public', table: 'fc_config', filter: `owner_id=eq.${user.id}` },
           (payload) => {
-            if (payload.new && (payload.new as { id?: string }).id === 'global') {
+            if (payload.new && (payload.new as { owner_id?: string }).owner_id === user.id) {
               setConfig(configFromDb(payload.new as Record<string, unknown>));
             }
           }
@@ -416,10 +438,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // pontos (rapidez de UX, ações em sequência) fazemos optimistic update.
   // ----------------------------------------------------------------
   const updateConfig = async (newConfig: AppConfig) => {
+    if (!user) return;
     const { error } = await supabase
       .from('fc_config')
-      .update(configToDb(newConfig))
-      .eq('id', 'global');
+      .upsert({ id: user.id, owner_id: user.id, ...configToDb(newConfig) }, { onConflict: 'owner_id' });
     if (error) throw error;
   };
 
@@ -917,8 +939,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       'fc_pens',
     ];
     for (const t of tables) {
-      // Deleta tudo da tabela: filtro `id != ''` permitido (aplica a todas as linhas)
-      const { error } = await supabase.from(t).delete().neq('id', '');
+      // Apaga SOMENTE os dados do próprio usuário (RLS também garante isso no servidor)
+      const { error } = await supabase.from(t).delete().eq('owner_id', user.id);
       if (error) console.error(`Error clearing ${t}:`, error);
     }
     await updateConfig(DEFAULT_CONFIG);

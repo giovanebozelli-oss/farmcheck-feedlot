@@ -9,9 +9,9 @@ interface LogoProps {
 }
 
 /**
- * Logotipo Trato — versão SVG inline (escalável, sem dependência de imagem).
+ * Logotipo GMC — versão SVG inline (escalável, sem dependência de imagem).
  * Identidade: badge azul-marinho com borda arredondada esmeralda, palavra
- * "Trato" com "Tra" branco + "to" esmeralda, subtítulo "Gestão de Confinamento".
+ * "GMC" com "GM" branco + "C" esmeralda, subtítulo "Gestão de Confinamento".
  */
 const TratoLogo: React.FC<LogoProps> = ({ width = 420, className = '', showTagline = true }) => {
   // viewBox proporcional. Altura ajusta conforme tem ou não tagline.
@@ -40,24 +40,24 @@ const TratoLogo: React.FC<LogoProps> = ({ width = 420, className = '', showTagli
           strokeWidth="2"
           fill="none"
         />
-        {/* Palavra "Trato" — "Tra" branco, "to" esmeralda */}
+        {/* Palavra "GMC" — "GM" branco, "C" esmeralda */}
         <text
-          x="180"
+          x="205"
           y="115"
           fill="white"
-          style={{ font: 'bold 88px "Georgia", "Times New Roman", serif' }}
+          style={{ font: 'bold 92px "Georgia", "Times New Roman", serif', letterSpacing: '2px' }}
           textAnchor="middle"
         >
-          Tra
+          GM
         </text>
         <text
-          x="320"
+          x="330"
           y="115"
           fill="#10b981"
-          style={{ font: 'bold 88px "Georgia", "Times New Roman", serif' }}
+          style={{ font: 'bold 92px "Georgia", "Times New Roman", serif' }}
           textAnchor="middle"
         >
-          to
+          C
         </text>
         {showTagline && (
           <>
