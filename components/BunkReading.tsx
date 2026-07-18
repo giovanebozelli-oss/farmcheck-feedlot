@@ -6,7 +6,8 @@ import {
   sortLotsByPen,
   getAdjustmentForScore,
 } from '../utils';
-import { Calendar, Save, CheckCircle, Loader2, Copy, History, ClipboardCheck } from 'lucide-react';
+import { Calendar, Save, CheckCircle, Loader2, Copy, History, ClipboardCheck, FileDown } from 'lucide-react';
+import { generateLeituraCochoPDF } from '../utils/pdfGenerator';
 import { useSessionState } from '../lib/useSessionState';
 import PenReorderControls from './PenReorderControls';
 
@@ -190,6 +191,24 @@ const BunkReadingPage: React.FC = () => {
 
   const scoreOptions = config.bunkScoreAdjustments || [];
 
+  const handleExportPDF = () => {
+    const rows = activeLots.map((lot) => {
+      const pen = pens.find((p) => p.id === lot.currentPenId);
+      const hasToday = !!rowState[lot.id] || !!savedReadingFor(lot.id, selectedDate) ||
+        !!feedHistory.find((r) => r.date === selectedDate && r.lotId === lot.id);
+      const score = hasToday ? scoreFor(lot.id) : null;
+      return {
+        penName: pen?.name || '?',
+        lotId: lot.id,
+        headCount: headCounts[lot.id] || 0,
+        lastReadings: lastReadings(lot.id),
+        todayScore: score,
+        adjustment: score !== null ? getAdjustmentForScore(score as BunkScore, scoreOptions) : null,
+      };
+    });
+    generateLeituraCochoPDF(rows, selectedDate);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -202,6 +221,16 @@ const BunkReadingPage: React.FC = () => {
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
+          <button
+            onClick={handleExportPDF}
+            disabled={activeLots.length === 0}
+            className="flex items-center gap-2 bg-white border border-slate-300 px-4 py-2 rounded-lg text-slate-700 hover:bg-slate-50 transition-colors shadow-sm disabled:opacity-50"
+            title="Exportar a ficha de leitura em PDF"
+          >
+            <FileDown size={18} className="text-emerald-600" />
+            <span className="font-medium">Exportar PDF</span>
+          </button>
+
           <button
             onClick={() => setReplicateModal({ open: true })}
             disabled={activeLots.length === 0}

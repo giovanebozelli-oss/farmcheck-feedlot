@@ -206,6 +206,20 @@ const FeedSheet: React.FC = () => {
 
       const numTratos = config.numTreatments || 4;
 
+      // Transição de dietas: herda o step (dieta por trato) do ÚLTIMO lançamento
+      // salvo do lote, pra não precisar re-selecionar todo dia.
+      // feedHistory já vem ordenado por data desc.
+      const lastRecordBefore = feedHistory.find(
+        (r) => r.lotId === lot.id && r.date < selectedDate
+      );
+      const inheritedStep = (lastRecordBefore as any)?.dietsPerTrato as string[] | undefined;
+      const inheritedDietsPerTrato: string[] | undefined =
+        inheritedStep && inheritedStep.length === numTratos
+          ? inheritedStep.map((dId) =>
+              diets.some((d) => d.id === dId) ? dId : (diet?.id || '')
+            )
+          : undefined;
+
       if (existingRecord) {
         // Já tem registro salvo no banco — sempre usa o salvo (e remove draft se houver)
         const savedDiets = (existingRecord as any).dietsPerTrato as string[] | undefined;
@@ -252,7 +266,7 @@ const FeedSheet: React.FC = () => {
           dietCost: diet?.calculatedCostPerKg || 0,
           dietsPerTrato: (draft.dietsPerTrato && draft.dietsPerTrato.length === numTratos)
             ? draft.dietsPerTrato
-            : Array(numTratos).fill(diet?.id || ''),
+            : (inheritedDietsPerTrato || Array(numTratos).fill(diet?.id || '')),
           prevConsumptionMS: prevConsMS,
           bunkScore: dayScore,
           drops: (draft.drops && draft.drops.length === numTratos)
@@ -274,7 +288,7 @@ const FeedSheet: React.FC = () => {
         dietId: diet?.id || '',
         dietMS: diet?.calculatedDryMatter || 60, // Fallback safe div
         dietCost: diet?.calculatedCostPerKg || 0,
-        dietsPerTrato: Array(numTratos).fill(diet?.id || ''),
+        dietsPerTrato: inheritedDietsPerTrato || Array(numTratos).fill(diet?.id || ''),
         prevConsumptionMS: prevConsMS,
         bunkScore: dayScore,
         drops: Array(numTratos).fill(0),

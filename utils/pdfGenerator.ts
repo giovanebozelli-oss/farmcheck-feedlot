@@ -846,3 +846,98 @@ export const generateFechamentoConsolidadoPDF = (rows: FechamentoConsolidadoRow[
 
 
 
+
+/**
+ * PDF da Ficha de Leitura de Cocho.
+ * Uma linha por baia/lote: últimas 3 leituras, escore de hoje e ajuste,
+ * mais colunas em branco pra anotar no campo.
+ */
+export const generateLeituraCochoPDF = (
+  rows: {
+    penName: string;
+    lotId: string;
+    headCount: number;
+    lastReadings: { date: string; score: number }[];
+    todayScore: number | null;
+    adjustment: number | null;
+  }[],
+  date: string
+) => {
+  const doc = new jsPDF('portrait');
+  const pageWidth = doc.internal.pageSize.getWidth();
+
+  doc.setFontSize(18);
+  doc.setTextColor(16, 185, 129);
+  doc.text('GMC — Gestão de Confinamento', 14, 18);
+
+  doc.setFontSize(13);
+  doc.setTextColor(80);
+  doc.text('Ficha de Leitura de Cocho', 14, 26);
+
+  doc.setFontSize(10);
+  doc.setTextColor(100);
+  doc.text(`Data: ${date.split('-').reverse().join('/')}`, 14, 32);
+
+  doc.setFontSize(8);
+  doc.setTextColor(120);
+  doc.text('Leitor: ____________________________', pageWidth - 80, 22);
+  doc.text('Hora: ___:___', pageWidth - 80, 30);
+
+  const fmtScore = (n: number) => String(n).replace('.', ',');
+  const shortDate = (iso: string) => {
+    const parts = iso.split('-');
+    return `${parts[2]}/${parts[1]}`;
+  };
+
+  const body = rows.map((r) => {
+    const hist = [0, 1, 2].map((i) => {
+      const h = r.lastReadings[i];
+      return h ? `${shortDate(h.date)}: ${fmtScore(h.score)}` : '-';
+    });
+    return [
+      r.penName,
+      r.lotId.toUpperCase(),
+      r.headCount,
+      hist[0],
+      hist[1],
+      hist[2],
+      r.todayScore !== null ? fmtScore(r.todayScore) : '',
+      r.adjustment !== null
+        ? `${r.adjustment > 0 ? '+' : ''}${fmtScore(r.adjustment)}%`
+        : '',
+      '',
+    ];
+  });
+
+  autoTable(doc, {
+    startY: 38,
+    head: [[
+      'Baia',
+      'Lote',
+      'Cab',
+      'Leitura -1',
+      'Leitura -2',
+      'Leitura -3',
+      'Escore hoje',
+      'Ajuste',
+      'Obs.',
+    ]],
+    body,
+    headStyles: { fillColor: [16, 185, 129], fontSize: 8 },
+    alternateRowStyles: { fillColor: [248, 250, 252] },
+    styles: { fontSize: 8, cellPadding: 2.5, valign: 'middle' },
+    columnStyles: {
+      0: { fontStyle: 'bold' },
+      6: { cellWidth: 22, halign: 'center' },
+      7: { cellWidth: 16, halign: 'center' },
+      8: { cellWidth: 30 },
+    },
+  });
+
+  const pageHeight = doc.internal.pageSize.getHeight();
+  doc.setFontSize(7);
+  doc.setTextColor(150);
+  doc.text('GMC — Gestão de Confinamento', pageWidth - 14, pageHeight - 8, { align: 'right' });
+
+  doc.save(`leitura-cocho-${date}.pdf`);
+};
