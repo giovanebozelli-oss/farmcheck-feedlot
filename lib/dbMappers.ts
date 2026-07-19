@@ -240,11 +240,15 @@ export const bunkReadingFromDb = (row: Record<string, unknown>) => ({
   date: String(row.date),
   lotId: String(row.lot_id),
   score: Number(row.score),
+  manualMsTotalKg: row.manual_ms_total_kg === null || row.manual_ms_total_kg === undefined
+    ? null
+    : Number(row.manual_ms_total_kg),
 });
 
-export const bunkReadingToDb = (r: { id: string; date: string; lotId: string; score: number }) => ({
+export const bunkReadingToDb = (r: { id: string; date: string; lotId: string; score: number; manualMsTotalKg?: number | null }) => ({
   id: r.id,
   date: r.date,
   lot_id: r.lotId,
   score: r.score,
+  manual_ms_total_kg: r.manualMsTotalKg ?? null,
 });

@@ -15,6 +15,8 @@ export interface BunkReading {
   date: string;
   lotId: string;
   score: BunkScore;
+  /** MS total pontual (kg/cab) — quando definido, substitui o cálculo do escore */
+  manualMsTotalKg?: number | null;
 }
 
 export enum FeedStatus {

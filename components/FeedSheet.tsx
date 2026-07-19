@@ -55,7 +55,6 @@ interface DraftEntry {
   bunkScore?: BunkScore;
   dietsPerTrato?: string[];
   dietId?: string;
-  manualMsAdjustmentKg?: number | null;
 }
 type DraftsByLot = Record<string, DraftEntry>;
 
@@ -259,9 +258,10 @@ const FeedSheet: React.FC = () => {
         };
       }
 
-      // Score do dia vem da tela "Leitura de Cocho" (fc_bunk_readings)
+      // Score e MS pontual do dia vêm da tela "Leitura de Cocho" (fc_bunk_readings)
       const dayReading = bunkReadings.find(r => r.lotId === lot.id && r.date === selectedDate);
       const dayScore = (dayReading ? dayReading.score : BunkScore.Zero) as BunkScore;
+      const dayManualKg = (dayReading?.manualMsTotalKg ?? null) as number | null;
 
       // Sem registro salvo: tenta hidratar do draft (não-salvo)
       const draft = drafts[lot.id];
@@ -280,7 +280,7 @@ const FeedSheet: React.FC = () => {
             : (inheritedDietsPerTrato || Array(numTratos).fill(diet?.id || '')),
           prevConsumptionMS: prevConsMS,
           bunkScore: dayScore,
-          manualMsAdjustmentKg: draft.manualMsAdjustmentKg ?? null,
+          manualMsAdjustmentKg: dayManualKg,
           drops: (draft.drops && draft.drops.length === numTratos)
             ? draft.drops
             : Array(numTratos).fill(0),
@@ -303,7 +303,7 @@ const FeedSheet: React.FC = () => {
         dietsPerTrato: inheritedDietsPerTrato || Array(numTratos).fill(diet?.id || ''),
         prevConsumptionMS: prevConsMS,
         bunkScore: dayScore,
-        manualMsAdjustmentKg: null,
+        manualMsAdjustmentKg: dayManualKg,
         drops: Array(numTratos).fill(0),
         daysOnFeed,
         projectedWeight,
@@ -327,14 +327,12 @@ const FeedSheet: React.FC = () => {
       if (e.isSaved) return; // ignora os salvos
       const hasInput =
         (e.drops || []).some((d) => (d || 0) > 0) ||
-        (e.dietsPerTrato || []).some((d) => d !== e.dietId) ||
-        e.manualMsAdjustmentKg !== null;
+        (e.dietsPerTrato || []).some((d) => d !== e.dietId);
       if (hasInput) {
         drafts[e.lotId] = {
           drops: e.drops,
           dietsPerTrato: e.dietsPerTrato,
           dietId: e.dietId,
-          manualMsAdjustmentKg: e.manualMsAdjustmentKg,
         };
       }
     });
@@ -465,19 +463,6 @@ const FeedSheet: React.FC = () => {
       const newDietsPerTrato = [...n[entryIndex].dietsPerTrato];
       newDietsPerTrato[tratoIndex] = dietId;
       n[entryIndex] = { ...n[entryIndex], dietsPerTrato: newDietsPerTrato, isSaved: false };
-      return n;
-    });
-  };
-
-  const handleManualAdjChange = (index: number, value: string) => {
-    const parsed = value.trim() === '' ? null : parseFloat(value.replace(',', '.'));
-    setEntries(prev => {
-      const n = [...prev];
-      n[index] = {
-        ...n[index],
-        manualMsAdjustmentKg: parsed !== null && isNaN(parsed) ? null : parsed,
-        isSaved: false,
-      };
       return n;
     });
   };
@@ -773,8 +758,7 @@ const FeedSheet: React.FC = () => {
               <tr>
                 <th className="px-4 py-4 min-w-[180px]">Baia / Lote</th>
                 <th className="px-4 py-4">Dieta</th>
-                <th className="px-4 py-4 text-center min-w-[110px]">Leitura Cocho</th>
-                <th className="px-4 py-4 text-center min-w-[120px]">MS total (kg/cab)</th>
+                <th className="px-4 py-4 text-center min-w-[120px]">Leitura Cocho</th>
                 <th className="px-4 py-4 text-center">Previsto (MN)</th>
                 {Array.from({ length: config.numTreatments || 4 }).map((_, i) => (
                   <th key={i} className="px-4 py-4 text-center min-w-[100px]">
@@ -789,7 +773,7 @@ const FeedSheet: React.FC = () => {
             <tbody className="divide-y divide-slate-100">
               {entries.length === 0 && (
                 <tr>
-                  <td colSpan={10} className="p-8 text-center text-slate-400">
+                  <td colSpan={9} className="p-8 text-center text-slate-400">
                     Nenhum lote ativo encontrado para esta data.
                   </td>
                 </tr>
@@ -900,29 +884,15 @@ const FeedSheet: React.FC = () => {
                             ? `${adjKgEffective > 0 ? '+' : ''}${adjKgEffective.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg`
                             : `${adjustment > 0 ? '+' : ''}${adjustment.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`}
                         </span>
-                        <Link to="/bunk" className="text-[9px] text-blue-500 hover:underline">alterar</Link>
-                      </div>
-                    </td>
-
-                    {/* Ajuste pontual em kg MS/cab + meta do dia */}
-                    <td className={`px-4 py-4 text-center ${isManualAdj ? 'bg-amber-50/60' : ''}`}>
-                      <div className="flex flex-col items-center gap-0.5">
-                        <input
-                          type="number"
-                          step="0.001"
-                          value={entry.manualMsAdjustmentKg ?? ''}
-                          onChange={(e) => handleManualAdjChange(index, e.target.value)}
-                          disabled={entry.isSaved}
-                          placeholder="ex: 10,500"
-                          title="MS total a fornecer por cabeça (kg) — substitui o cálculo do escore só neste lote"
-                          className={`w-20 px-2 py-1 border rounded text-center text-xs focus:ring-2 focus:ring-amber-400 outline-none disabled:bg-slate-100 ${isManualAdj ? 'border-amber-400 bg-white font-bold text-amber-800' : 'border-dashed border-slate-300 text-slate-600'}`}
-                        />
                         {isManualAdj && (
-                          <span className="text-[9px] font-bold text-amber-600">pontual ativo</span>
+                          <span className="text-[9px] font-bold text-amber-600" title="MS total pontual definido na Leitura de Cocho">
+                            pontual: {(entry.manualMsAdjustmentKg as number).toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg
+                          </span>
                         )}
                         <span className="text-[10px] text-slate-500">
                           Meta: <strong className="text-slate-700">{predictedMSPerHead.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })}</strong> kg/cab
                         </span>
+                        <Link to="/bunk" className="text-[9px] text-blue-500 hover:underline">alterar</Link>
                       </div>
                     </td>
 
@@ -1133,19 +1103,11 @@ const FeedSheet: React.FC = () => {
                   </div>
                   <Link to="/bunk" className="text-[11px] text-blue-600 font-bold hover:underline">Alterar</Link>
                 </div>
-                <div className={`mt-2 flex items-center gap-2 rounded-lg p-2 ${isManualAdj ? 'bg-amber-50 border border-amber-200' : 'bg-slate-50'}`}>
-                  <div className="flex-1">
-                    <div className="text-[9px] font-bold text-slate-500 uppercase">MS total pontual (kg/cab)</div>
-                    <input
-                      type="number"
-                      step="0.001"
-                      inputMode="decimal"
-                      value={entry.manualMsAdjustmentKg ?? ''}
-                      onChange={(e) => handleManualAdjChange(index, e.target.value)}
-                      disabled={entry.isSaved}
-                      placeholder="ex: 10,500 (vazio = escore)"
-                      className={`w-full mt-0.5 px-2 py-1 border rounded text-center text-xs outline-none focus:ring-2 focus:ring-amber-400 disabled:bg-slate-100 ${isManualAdj ? 'border-amber-400 font-bold text-amber-800' : 'border-dashed border-slate-300'}`}
-                    />
+                <div className={`mt-2 flex items-center justify-between rounded-lg p-2 ${isManualAdj ? 'bg-amber-50 border border-amber-200' : 'bg-slate-50'}`}>
+                  <div className="text-[10px] text-slate-500">
+                    {isManualAdj
+                      ? <span className="font-bold text-amber-700">MS total pontual: {(entry.manualMsAdjustmentKg as number).toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg/cab</span>
+                      : 'Meta calculada pelo escore'}
                   </div>
                   <div className="text-right">
                     <div className="text-[9px] font-bold text-slate-500 uppercase">Meta MS</div>

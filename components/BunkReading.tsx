@@ -22,6 +22,7 @@ const fmtScore = (n: number) => String(n).replace('.', ',');
 
 interface RowState {
   score: BunkScore;
+  manualKg: number | null;
   dirty: boolean;
   saving: boolean;
 }
@@ -98,6 +99,14 @@ const BunkReadingPage: React.FC = () => {
     return BunkScore.Zero;
   };
 
+  /** MS total pontual efetivo (estado local > salvo > null) */
+  const manualFor = (lotId: string): number | null => {
+    const local = rowState[lotId];
+    if (local) return local.manualKg;
+    const saved = savedReadingFor(lotId, selectedDate);
+    return (saved?.manualMsTotalKg ?? null) as number | null;
+  };
+
   const isSavedFor = (lotId: string): boolean => {
     const local = rowState[lotId];
     if (local?.dirty) return false;
@@ -124,14 +133,27 @@ const BunkReadingPage: React.FC = () => {
 
   const setScore = (lotId: string, value: string) => {
     const score = parseFloat(value) as BunkScore;
-    setRowState((prev) => ({ ...prev, [lotId]: { score, dirty: true, saving: false } }));
+    setRowState((prev) => ({
+      ...prev,
+      [lotId]: { score, manualKg: prev[lotId]?.manualKg ?? manualFor(lotId), dirty: true, saving: false },
+    }));
+  };
+
+  const setManualKg = (lotId: string, value: string) => {
+    const parsed = value.trim() === '' ? null : parseFloat(value.replace(',', '.'));
+    const manualKg = parsed !== null && isNaN(parsed) ? null : parsed;
+    setRowState((prev) => ({
+      ...prev,
+      [lotId]: { score: prev[lotId]?.score ?? scoreFor(lotId), manualKg, dirty: true, saving: false },
+    }));
   };
 
   const saveOne = async (lotId: string) => {
     const score = scoreFor(lotId);
-    setRowState((prev) => ({ ...prev, [lotId]: { score, dirty: true, saving: true } }));
+    const manualKg = manualFor(lotId);
+    setRowState((prev) => ({ ...prev, [lotId]: { score, manualKg, dirty: true, saving: true } }));
     try {
-      await saveBunkReading({ id: `${selectedDate}_${lotId}`, date: selectedDate, lotId, score });
+      await saveBunkReading({ id: `${selectedDate}_${lotId}`, date: selectedDate, lotId, score, manualMsTotalKg: manualKg });
       setRowState((prev) => {
         const n = { ...prev };
         delete n[lotId];
@@ -140,7 +162,7 @@ const BunkReadingPage: React.FC = () => {
     } catch (err) {
       console.error('[BunkReading] erro ao salvar:', err);
       alert('Erro ao salvar a leitura. Verifique sua conexão.');
-      setRowState((prev) => ({ ...prev, [lotId]: { score, dirty: true, saving: false } }));
+      setRowState((prev) => ({ ...prev, [lotId]: { score, manualKg, dirty: true, saving: false } }));
     }
   };
 
@@ -149,7 +171,10 @@ const BunkReadingPage: React.FC = () => {
     try {
       for (const lot of activeLots) {
         const score = scoreFor(lot.id);
-        await saveBunkReading({ id: `${selectedDate}_${lot.id}`, date: selectedDate, lotId: lot.id, score });
+        await saveBunkReading({
+          id: `${selectedDate}_${lot.id}`, date: selectedDate, lotId: lot.id, score,
+          manualMsTotalKg: manualFor(lot.id),
+        });
       }
       setRowState({});
     } catch (err) {
@@ -180,7 +205,12 @@ const BunkReadingPage: React.FC = () => {
             return rec ? { score: rec.bunkScoreYesterday } : undefined;
           })();
         if (src) {
-          n[lot.id] = { score: src.score as BunkScore, dirty: true, saving: false };
+          n[lot.id] = {
+            score: src.score as BunkScore,
+            manualKg: n[lot.id]?.manualKg ?? manualFor(lot.id),
+            dirty: true,
+            saving: false,
+          };
           applied++;
         }
       }
@@ -338,6 +368,8 @@ const BunkReadingPage: React.FC = () => {
             const pen = pens.find((p) => p.id === lot.currentPenId);
             const score = scoreFor(lot.id);
             const adj = adjLabelFor(score);
+            const manualKg = manualFor(lot.id);
+            const hasManual = manualKg !== null;
             const saved = isSavedFor(lot.id);
             const saving = rowState[lot.id]?.saving || false;
             const history = lastReadings(lot.id);
@@ -430,27 +462,44 @@ const BunkReadingPage: React.FC = () => {
                   )}
                 </div>
 
-                {/* Escore de hoje */}
-                <div className="col-span-2 md:col-span-1 flex items-center gap-2 md:col-start-4">
-                  <select
-                    value={score}
-                    onChange={(e) => setScore(lot.id, e.target.value)}
-                    className="flex-1 min-w-0 px-2 py-1.5 border rounded-lg text-xs font-bold focus:ring-2 focus:ring-emerald-500 outline-none bg-white"
-                  >
-                    {scoreOptions.map((rule) => (
-                      <option key={rule.score} value={rule.score}>
-                        Sc {fmtScore(rule.score)} ({adjLabelFor(rule.score).label})
-                      </option>
-                    ))}
-                  </select>
-                  <span
-                    className={`text-[11px] font-bold whitespace-nowrap ${
-                      adj.value > 0 ? 'text-emerald-600' : adj.value < 0 ? 'text-red-500' : 'text-slate-400'
-                    }`}
-                  >
-                    {adj.value > 0 ? '▲ ' : adj.value < 0 ? '▼ ' : ''}
-                    {adj.label}
-                  </span>
+                {/* Escore de hoje + MS total pontual (discreto) */}
+                <div className="col-span-2 md:col-span-1 md:col-start-4">
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={score}
+                      onChange={(e) => setScore(lot.id, e.target.value)}
+                      className="flex-1 min-w-0 px-2 py-1.5 border rounded-lg text-xs font-bold focus:ring-2 focus:ring-emerald-500 outline-none bg-white"
+                    >
+                      {scoreOptions.map((rule) => (
+                        <option key={rule.score} value={rule.score}>
+                          Sc {fmtScore(rule.score)} ({adjLabelFor(rule.score).label})
+                        </option>
+                      ))}
+                    </select>
+                    <span
+                      className={`text-[11px] font-bold whitespace-nowrap ${
+                        hasManual ? 'text-amber-500 line-through opacity-60' : adj.value > 0 ? 'text-emerald-600' : adj.value < 0 ? 'text-red-500' : 'text-slate-400'
+                      }`}
+                      title={hasManual ? 'Ignorado: MS total pontual definido' : undefined}
+                    >
+                      {adj.value > 0 ? '▲ ' : adj.value < 0 ? '▼ ' : ''}
+                      {adj.label}
+                    </span>
+                  </div>
+                  <div className={`mt-1 flex items-center gap-1.5 ${hasManual ? '' : 'opacity-70'}`}>
+                    <span className="text-[9px] text-slate-400 uppercase font-bold whitespace-nowrap">MS total pontual:</span>
+                    <input
+                      type="number"
+                      step="0.001"
+                      inputMode="decimal"
+                      value={manualKg ?? ''}
+                      onChange={(e) => setManualKg(lot.id, e.target.value)}
+                      placeholder="—"
+                      title="MS total a fornecer (kg/cab) — se preenchido, substitui o cálculo do escore neste lote"
+                      className={`w-20 px-1.5 py-0.5 border rounded text-center text-[11px] outline-none focus:ring-1 focus:ring-amber-400 ${hasManual ? 'border-amber-400 bg-amber-50 font-bold text-amber-800' : 'border-dashed border-slate-300 text-slate-500'}`}
+                    />
+                    <span className="text-[9px] text-slate-400">kg/cab</span>
+                  </div>
                 </div>
               </div>
             );
