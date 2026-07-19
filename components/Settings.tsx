@@ -29,6 +29,14 @@ const GeneralParamsTab = () => {
     updateConfig({ ...config, bunkScoreAdjustments: newAdjustments });
   };
 
+  const handleScoreKgChange = (index: number, val: number) => {
+    const newAdjustments = [...config.bunkScoreAdjustments];
+    newAdjustments[index].adjustmentKgMS = val;
+    updateConfig({ ...config, bunkScoreAdjustments: newAdjustments });
+  };
+
+  const isKgMode = config.bunkAdjustmentMode === 'kg';
+
   const deleteBunkScore = (index: number) => {
     const newAdjustments = [...config.bunkScoreAdjustments];
     newAdjustments.splice(index, 1);
@@ -36,7 +44,10 @@ const GeneralParamsTab = () => {
   };
 
   const addBunkScore = () => {
-    const newAdjustments = [...config.bunkScoreAdjustments, newBunk];
+    const entry = config.bunkAdjustmentMode === 'kg'
+      ? { score: newBunk.score, adjustmentPercentage: 0, adjustmentKgMS: newBunk.adjustmentPercentage }
+      : { score: newBunk.score, adjustmentPercentage: newBunk.adjustmentPercentage, adjustmentKgMS: 0 };
+    const newAdjustments = [...config.bunkScoreAdjustments, entry];
     // Sort by score
     newAdjustments.sort((a, b) => a.score - b.score);
     updateConfig({ ...config, bunkScoreAdjustments: newAdjustments });
@@ -127,13 +138,37 @@ const GeneralParamsTab = () => {
 
       <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
         <div className="flex justify-between items-center mb-4 pb-2 border-b">
-          <h2 className="text-lg font-bold text-slate-800">Escale de Leitura de Cocho (F-03)</h2>
+          <h2 className="text-lg font-bold text-slate-800">Escala de Leitura de Cocho (F-03)</h2>
           <button 
             onClick={() => setShowBunkForm(!showBunkForm)}
             className="text-xs bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full font-bold flex items-center gap-1 hover:bg-emerald-200"
           >
             <Plus size={14} /> Novo Escore
           </button>
+        </div>
+
+        {/* Tipo de correção: % do dia anterior ou kg de MS por cabeça */}
+        <div className="mb-4 flex flex-col sm:flex-row sm:items-center gap-2">
+          <span className="text-xs font-bold text-slate-500 uppercase">Tipo de correção:</span>
+          <div className="flex gap-2">
+            <button
+              onClick={() => handleChange('bunkAdjustmentMode', 'percent')}
+              className={`px-4 py-2 rounded-lg text-xs font-bold border transition-colors ${!isKgMode ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`}
+            >
+              % do dia anterior
+            </button>
+            <button
+              onClick={() => handleChange('bunkAdjustmentMode', 'kg')}
+              className={`px-4 py-2 rounded-lg text-xs font-bold border transition-colors ${isKgMode ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`}
+            >
+              kg de MS por cabeça
+            </button>
+          </div>
+          <span className="text-[11px] text-slate-400 sm:ml-2">
+            {isKgMode
+              ? 'Ex: +0,200 kg ou -1,000 kg de MS/cab em relação ao dia anterior'
+              : 'Ex: +5% ou -10% sobre o consumo de MS do dia anterior'}
+          </span>
         </div>
 
         {showBunkForm && (
@@ -163,23 +198,23 @@ const GeneralParamsTab = () => {
                </div>
              </div>
              <div>
-               <label className="text-xs font-bold text-emerald-800 uppercase">Correção (%)</label>
+               <label className="text-xs font-bold text-emerald-800 uppercase">{isKgMode ? 'Ajuste (kg MS/cab)' : 'Correção (%)'}</label>
                <div className="flex items-center gap-2">
                  <button 
-                   onClick={() => setNewBunk(prev => ({ ...prev, adjustmentPercentage: prev.adjustmentPercentage - 1 }))}
+                   onClick={() => setNewBunk(prev => ({ ...prev, adjustmentPercentage: Number((prev.adjustmentPercentage - (isKgMode ? 0.1 : 1)).toFixed(3)) }))}
                    className="p-2 bg-white border border-emerald-200 rounded shadow-sm hover:bg-emerald-100 text-emerald-700"
                  >
                    <Minus size={16} strokeWidth={3} />
                  </button>
                  <input 
                    type="number" 
-                   step="0.5"
+                   step={isKgMode ? 0.001 : 0.5}
                    className="w-full p-2 rounded border border-emerald-200 text-center font-bold" 
                    value={newBunk.adjustmentPercentage} 
                    onChange={e=>setNewBunk({...newBunk, adjustmentPercentage:Number(e.target.value)})} 
                  />
                  <button 
-                   onClick={() => setNewBunk(prev => ({ ...prev, adjustmentPercentage: prev.adjustmentPercentage + 1 }))}
+                   onClick={() => setNewBunk(prev => ({ ...prev, adjustmentPercentage: Number((prev.adjustmentPercentage + (isKgMode ? 0.1 : 1)).toFixed(3)) }))}
                    className="p-2 bg-white border border-emerald-200 rounded shadow-sm hover:bg-emerald-100 text-emerald-700"
                  >
                    <Plus size={16} strokeWidth={3} />
@@ -201,7 +236,7 @@ const GeneralParamsTab = () => {
               <tr>
                 <th className="p-2">Escore</th>
                 <th className="p-2">Descrição</th>
-                <th className="p-2 text-right">Correção (%)</th>
+                <th className="p-2 text-right">{isKgMode ? 'Ajuste (kg MS/cab)' : 'Correção (%)'}</th>
                 <th className="p-2 text-right">Ação</th>
               </tr>
             </thead>
@@ -213,13 +248,23 @@ const GeneralParamsTab = () => {
                     <td className="p-2 font-mono font-bold">{rule.score}</td>
                     <td className="p-2 text-slate-600">{desc}</td>
                     <td className="p-2 text-right">
-                      <input 
-                        type="number" 
-                        step="0.5"
-                        value={rule.adjustmentPercentage}
-                        onChange={(e) => handleScoreAdjustmentChange(idx, parseFloat(e.target.value))}
-                        className={`w-20 p-1 border rounded text-right font-bold ${rule.adjustmentPercentage < 0 ? 'text-red-600' : 'text-emerald-600'}`}
-                      />
+                      {isKgMode ? (
+                        <input
+                          type="number"
+                          step="0.001"
+                          value={rule.adjustmentKgMS ?? 0}
+                          onChange={(e) => handleScoreKgChange(idx, parseFloat(e.target.value) || 0)}
+                          className={`w-24 p-1 border rounded text-right font-bold ${(rule.adjustmentKgMS ?? 0) < 0 ? 'text-red-600' : 'text-emerald-600'}`}
+                        />
+                      ) : (
+                        <input
+                          type="number"
+                          step="0.5"
+                          value={rule.adjustmentPercentage}
+                          onChange={(e) => handleScoreAdjustmentChange(idx, parseFloat(e.target.value))}
+                          className={`w-20 p-1 border rounded text-right font-bold ${rule.adjustmentPercentage < 0 ? 'text-red-600' : 'text-emerald-600'}`}
+                        />
+                      )}
                     </td>
                     <td className="p-2 text-right">
                       <button 

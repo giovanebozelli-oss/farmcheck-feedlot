@@ -104,7 +104,7 @@ export const generateFichaTratoPDF = (entries: any[], date: string, treatmentPro
     tratoHeaders.push('Realizado (kg)');
   });
 
-  const headers = ['Baia', 'Lote', 'Cab', 'Dieta Princ.', 'Total MN', ...tratoHeaders, 'Escore'];
+  const headers = ['Baia', 'Cab', 'Total MN', ...tratoHeaders];
 
   const tableData = entries.map(entry => {
     const predictedTotalMN = entry.predictedTotalMN || 0;
@@ -141,34 +141,28 @@ export const generateFichaTratoPDF = (entries: any[], date: string, treatmentPro
 
     return [
       entry.penName,
-      entry.lotId.toUpperCase(),
       entry.headCount,
-      entry.dietName,
       predictedTotalMN > 0 ? predictedTotalMN.toLocaleString('pt-BR') : '---',
       ...tratoValues,
-      '', // Escore (manual)
     ];
   });
 
   // Larguras das colunas — ajustadas pra caber dieta na linha 2 sem overflow
   // A4 landscape: 297mm. Margens 8mm cada lado = 281mm úteis.
   // Total: 20+16+8+22+16 + 4*(15+18) + 11 = 224mm  ✓
-  const escoreWidth = 11;
   const tratoColCount = treatmentProportions.length;
-  const previstoW = 15; // espaço pra "Term. 70%" na 2ª linha
-  const realizadoW = 18; // espaço maior pra escrever número à mão
+  const previstoW = 24; // espaço pra dieta na 2ª linha
+  const realizadoW = 26; // espaço maior pra escrever número à mão
 
   const columnStyles: Record<number, any> = {
-    0: { cellWidth: 20 },     // Baia
-    1: { cellWidth: 16 },     // Lote
-    2: { cellWidth: 8 },      // Cab
-    3: { cellWidth: 22 },     // Dieta principal
-    4: { cellWidth: 16 },     // Total MN
+    0: { cellWidth: 24 },     // Baia
+    1: { cellWidth: 12 },     // Cab
+    2: { cellWidth: 20 },     // Total MN
   };
   // Colunas de trato + realizado
   for (let i = 0; i < tratoColCount; i++) {
-    const previstoIdx = 5 + i * 2;
-    const realizadoIdx = 6 + i * 2;
+    const previstoIdx = 3 + i * 2;
+    const realizadoIdx = 4 + i * 2;
     columnStyles[previstoIdx] = {
       cellWidth: previstoW,
       fillColor: [240, 253, 244], // verde clarinho — diferencia previsto
@@ -178,8 +172,6 @@ export const generateFichaTratoPDF = (entries: any[], date: string, treatmentPro
       // Mantém branco para escrever à mão
     };
   }
-  columnStyles[5 + tratoColCount * 2] = { cellWidth: escoreWidth }; // Escore
-
   autoTable(doc, {
     startY: 38,
     margin: { left: 8, right: 8 },
@@ -204,9 +196,8 @@ export const generateFichaTratoPDF = (entries: any[], date: string, treatmentPro
       // "Realizado" e "Escore" ficam em branco (sem fill, com borda visível)
       if (data.section === 'body') {
         const colIdx = data.column.index;
-        const isRealizado = colIdx >= 5 && colIdx <= 5 + tratoColCount * 2 - 1 && (colIdx - 5) % 2 === 1;
-        const isEscore = colIdx === 5 + tratoColCount * 2;
-        if (isRealizado || isEscore) {
+        const isRealizado = colIdx >= 3 && colIdx <= 3 + tratoColCount * 2 - 1 && (colIdx - 3) % 2 === 1;
+        if (isRealizado) {
           data.cell.styles.fillColor = [255, 255, 255];
         }
       }
@@ -859,7 +850,7 @@ export const generateLeituraCochoPDF = (
     headCount: number;
     lastReadings: { date: string; score: number }[];
     todayScore: number | null;
-    adjustment: number | null;
+    adjustmentLabel: string;
   }[],
   date: string
 ) => {
@@ -902,9 +893,7 @@ export const generateLeituraCochoPDF = (
       hist[1],
       hist[2],
       r.todayScore !== null ? fmtScore(r.todayScore) : '',
-      r.adjustment !== null
-        ? `${r.adjustment > 0 ? '+' : ''}${fmtScore(r.adjustment)}%`
-        : '',
+      r.adjustmentLabel || '',
       '',
     ];
   });

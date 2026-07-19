@@ -5,6 +5,7 @@ import {
   calculateAllHeadCounts,
   sortLotsByPen,
   getAdjustmentForScore,
+  getAdjustmentKgForScore,
 } from '../utils';
 import { Calendar, Save, CheckCircle, Loader2, Copy, History, ClipboardCheck, FileDown } from 'lucide-react';
 import { generateLeituraCochoPDF } from '../utils/pdfGenerator';
@@ -190,6 +191,20 @@ const BunkReadingPage: React.FC = () => {
   };
 
   const scoreOptions = config.bunkScoreAdjustments || [];
+  const isKgMode = config.bunkAdjustmentMode === 'kg';
+
+  /** Rótulo do ajuste do escore conforme o modo da escala */
+  const adjLabelFor = (score: BunkScore): { label: string; value: number } => {
+    if (isKgMode) {
+      const kg = getAdjustmentKgForScore(score, scoreOptions);
+      return {
+        label: `${kg > 0 ? '+' : ''}${kg.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg`,
+        value: kg,
+      };
+    }
+    const pct = getAdjustmentForScore(score, scoreOptions);
+    return { label: `${pct > 0 ? '+' : ''}${fmtScore(pct)}%`, value: pct };
+  };
 
   const handleExportPDF = () => {
     const rows = activeLots.map((lot) => {
@@ -203,7 +218,7 @@ const BunkReadingPage: React.FC = () => {
         headCount: headCounts[lot.id] || 0,
         lastReadings: lastReadings(lot.id),
         todayScore: score,
-        adjustment: score !== null ? getAdjustmentForScore(score as BunkScore, scoreOptions) : null,
+        adjustmentLabel: score !== null ? adjLabelFor(score as BunkScore).label : '',
       };
     });
     generateLeituraCochoPDF(rows, selectedDate);
@@ -322,7 +337,7 @@ const BunkReadingPage: React.FC = () => {
           {activeLots.map((lot) => {
             const pen = pens.find((p) => p.id === lot.currentPenId);
             const score = scoreFor(lot.id);
-            const adjustment = getAdjustmentForScore(score, scoreOptions);
+            const adj = adjLabelFor(score);
             const saved = isSavedFor(lot.id);
             const saving = rowState[lot.id]?.saving || false;
             const history = lastReadings(lot.id);
@@ -424,18 +439,17 @@ const BunkReadingPage: React.FC = () => {
                   >
                     {scoreOptions.map((rule) => (
                       <option key={rule.score} value={rule.score}>
-                        Sc {fmtScore(rule.score)} ({rule.adjustmentPercentage > 0 ? '+' : ''}
-                        {fmtScore(rule.adjustmentPercentage)}%)
+                        Sc {fmtScore(rule.score)} ({adjLabelFor(rule.score).label})
                       </option>
                     ))}
                   </select>
                   <span
                     className={`text-[11px] font-bold whitespace-nowrap ${
-                      adjustment > 0 ? 'text-emerald-600' : adjustment < 0 ? 'text-red-500' : 'text-slate-400'
+                      adj.value > 0 ? 'text-emerald-600' : adj.value < 0 ? 'text-red-500' : 'text-slate-400'
                     }`}
                   >
-                    {adjustment > 0 ? '▲ +' : adjustment < 0 ? '▼ ' : ''}
-                    {fmtScore(adjustment)}%
+                    {adj.value > 0 ? '▲ ' : adj.value < 0 ? '▼ ' : ''}
+                    {adj.label}
                   </span>
                 </div>
               </div>

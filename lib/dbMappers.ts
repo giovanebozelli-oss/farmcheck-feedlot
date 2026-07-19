@@ -158,6 +158,7 @@ const feedRecordMap: Mapping = {
   actualDryMatterPercentPV: 'actual_dry_matter_percent_pv',
   costPerHead: 'cost_per_head',
   deviationPercent: 'deviation_percent',
+  manualMsAdjustmentKg: 'manual_ms_adjustment_kg',
 };
 export const feedRecordToDb = (r: Partial<DailyFeedRecord>) =>
   objToDb<DailyFeedRecord>(r, feedRecordMap);
@@ -172,6 +173,7 @@ export function configFromDb(row: Record<string, unknown>): AppConfig {
     treatmentProportions: row.treatment_proportions as number[],
     firstTratoMSPercentPV: row.first_trato_ms_percent_pv as number,
     bunkScoreAdjustments: row.bunk_score_adjustments as AppConfig['bunkScoreAdjustments'],
+    bunkAdjustmentMode: (row.bunk_adjustment_mode as AppConfig['bunkAdjustmentMode']) || 'percent',
     loadingLimitLower: row.loading_limit_lower as number,
     loadingLimitUpper: row.loading_limit_upper as number,
     gmdCurves: row.gmd_curves as AppConfig['gmdCurves'],
@@ -184,6 +186,7 @@ export function configToDb(cfg: AppConfig): Record<string, unknown> {
     treatment_proportions: cfg.treatmentProportions,
     first_trato_ms_percent_pv: cfg.firstTratoMSPercentPV,
     bunk_score_adjustments: cfg.bunkScoreAdjustments,
+    bunk_adjustment_mode: cfg.bunkAdjustmentMode || 'percent',
     loading_limit_lower: cfg.loadingLimitLower,
     loading_limit_upper: cfg.loadingLimitUpper,
     gmd_curves: cfg.gmdCurves,

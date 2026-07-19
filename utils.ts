@@ -97,6 +97,34 @@ export const getAdjustmentForScore = (score: BunkScore, rules: BunkScoreAdjustme
   return rule ? rule.adjustmentPercentage : 0;
 };
 
+/** Ajuste em kg de MS/cab do escore (modo 'kg') */
+export const getAdjustmentKgForScore = (score: BunkScore, rules: BunkScoreAdjustment[]): number => {
+  const rule = rules.find(r => r.score == score);
+  return rule && typeof rule.adjustmentKgMS === 'number' ? rule.adjustmentKgMS : 0;
+};
+
+/**
+ * Meta de MS (kg/cab) do dia:
+ * 1. Ajuste pontual (se digitado) = MS TOTAL a fornecer por cabeça (ex: 10,5 kg)
+ * 2. Modo 'kg': consumo anterior + kg do escore
+ * 3. Modo 'percent' (padrão): consumo anterior * (1 + %/100)
+ */
+export const computeTargetMSPerHead = (
+  prevMS: number,
+  score: BunkScore,
+  config: { bunkAdjustmentMode?: 'percent' | 'kg'; bunkScoreAdjustments: BunkScoreAdjustment[] },
+  manualKg?: number | null
+): number => {
+  if (manualKg !== undefined && manualKg !== null && !isNaN(manualKg)) {
+    return Math.max(0, manualKg);
+  }
+  const rules = config.bunkScoreAdjustments || [];
+  if (config.bunkAdjustmentMode === 'kg') {
+    return Math.max(0, prevMS + getAdjustmentKgForScore(score, rules));
+  }
+  return Math.max(0, prevMS * (1 + getAdjustmentForScore(score, rules) / 100));
+};
+
 // F-09: Calculate Active Head Count for a Lot based on Movements
 // Lógica robusta:
 //  - Se houver QUALQUER Entry registrada: o total = soma das Entries - soma de mortes/saídas/transferências/refugos

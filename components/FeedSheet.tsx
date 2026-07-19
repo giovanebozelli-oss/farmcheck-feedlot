@@ -5,6 +5,7 @@ import { BunkScore, DailyFeedRecord, Lot } from '../types';
 import { 
   calculateProjectedWeight, 
   getAdjustmentForScore,
+  computeTargetMSPerHead,
   calculateDeviation,
   calculateDaysOnFeed,
   calculateConsumptionMetrics,
@@ -36,6 +37,8 @@ interface SheetEntry {
   prevConsumptionMS: number; // Consumption from D-1 or Estimate
 
   bunkScore: BunkScore;
+  /** Ajuste pontual em kg MS/cab (null = usa o do escore) */
+  manualMsAdjustmentKg: number | null;
   drops: number[]; // Dynamic number of treatments
 
   daysOnFeed: number;
@@ -52,6 +55,7 @@ interface DraftEntry {
   bunkScore?: BunkScore;
   dietsPerTrato?: string[];
   dietId?: string;
+  manualMsAdjustmentKg?: number | null;
 }
 type DraftsByLot = Record<string, DraftEntry>;
 
@@ -246,6 +250,7 @@ const FeedSheet: React.FC = () => {
           dietsPerTrato,
           prevConsumptionMS: prevConsMS,
           bunkScore: existingRecord.bunkScoreYesterday,
+          manualMsAdjustmentKg: (existingRecord as any).manualMsAdjustmentKg ?? null,
           drops: existingRecord.drops || Array(numTratos).fill(0),
           daysOnFeed,
           projectedWeight,
@@ -275,6 +280,7 @@ const FeedSheet: React.FC = () => {
             : (inheritedDietsPerTrato || Array(numTratos).fill(diet?.id || '')),
           prevConsumptionMS: prevConsMS,
           bunkScore: dayScore,
+          manualMsAdjustmentKg: draft.manualMsAdjustmentKg ?? null,
           drops: (draft.drops && draft.drops.length === numTratos)
             ? draft.drops
             : Array(numTratos).fill(0),
@@ -297,6 +303,7 @@ const FeedSheet: React.FC = () => {
         dietsPerTrato: inheritedDietsPerTrato || Array(numTratos).fill(diet?.id || ''),
         prevConsumptionMS: prevConsMS,
         bunkScore: dayScore,
+        manualMsAdjustmentKg: null,
         drops: Array(numTratos).fill(0),
         daysOnFeed,
         projectedWeight,
@@ -320,12 +327,14 @@ const FeedSheet: React.FC = () => {
       if (e.isSaved) return; // ignora os salvos
       const hasInput =
         (e.drops || []).some((d) => (d || 0) > 0) ||
-        (e.dietsPerTrato || []).some((d) => d !== e.dietId);
+        (e.dietsPerTrato || []).some((d) => d !== e.dietId) ||
+        e.manualMsAdjustmentKg !== null;
       if (hasInput) {
         drafts[e.lotId] = {
           drops: e.drops,
           dietsPerTrato: e.dietsPerTrato,
           dietId: e.dietId,
+          manualMsAdjustmentKg: e.manualMsAdjustmentKg,
         };
       }
     });
@@ -460,6 +469,19 @@ const FeedSheet: React.FC = () => {
     });
   };
 
+  const handleManualAdjChange = (index: number, value: string) => {
+    const parsed = value.trim() === '' ? null : parseFloat(value.replace(',', '.'));
+    setEntries(prev => {
+      const n = [...prev];
+      n[index] = {
+        ...n[index],
+        manualMsAdjustmentKg: parsed !== null && isNaN(parsed) ? null : parsed,
+        isSaved: false,
+      };
+      return n;
+    });
+  };
+
   const handleInputChange = (index: number, dropIndex: number, value: string) => {
     const val = parseInt(value) || 0;
     setEntries(prev => {
@@ -506,8 +528,9 @@ const FeedSheet: React.FC = () => {
     // Se o último trato está vazio mas houver tratos anteriores preenchidos,
     // mostra a sugestão pra confirmação (#1b)
     if (anyPrevFilled && lastEmpty) {
-      const adj = getAdjustmentForScore(entry.bunkScore, config.bunkScoreAdjustments || []);
-      const msAlvoTotal = (entry.prevConsumptionMS * (1 + (adj / 100))) * entry.headCount;
+      const msAlvoTotal = computeTargetMSPerHead(
+        entry.prevConsumptionMS, entry.bunkScore, config, entry.manualMsAdjustmentKg
+      ) * entry.headCount;
       const livePred = calculateLivePredictions(
         msAlvoTotal,
         config.treatmentProportions || [25, 25, 25, 25],
@@ -553,8 +576,17 @@ const FeedSheet: React.FC = () => {
     const finalEntry = refreshedEntry; // o setState async pode não ter propagado, mas usamos drops via state mais atualizado
 
     // Recalcula com step intra-dia
-    const adjustment = getAdjustmentForScore(finalEntry.bunkScore, config.bunkScoreAdjustments || []);
-    const predictedMSPerHead = finalEntry.prevConsumptionMS * (1 + (adjustment / 100));
+    // Meta MS/cab: ajuste pontual (kg) > escore em kg > escore em %
+    const predictedMSPerHead = computeTargetMSPerHead(
+      finalEntry.prevConsumptionMS,
+      finalEntry.bunkScore,
+      config,
+      finalEntry.manualMsAdjustmentKg
+    );
+    // % efetivo equivalente (mantém compatibilidade de relatórios/histórico)
+    const adjustment = finalEntry.prevConsumptionMS > 0
+      ? Number((((predictedMSPerHead / finalEntry.prevConsumptionMS) - 1) * 100).toFixed(2))
+      : 0;
     const msTotalKg = predictedMSPerHead * finalEntry.headCount; // kg MS total previsto pra hoje
 
     // Detecta se está em "modo step" (algum trato com dieta diferente da principal)
@@ -626,6 +658,7 @@ const FeedSheet: React.FC = () => {
       projectedWeight: finalEntry.projectedWeight,
       bunkScoreYesterday: finalEntry.bunkScore,
       adjustmentPercentage: adjustment,
+      manualMsAdjustmentKg: finalEntry.manualMsAdjustmentKg,
       predictedTotalMN,
       actualTotalMN,
       drops: finalEntry.drops,
@@ -670,8 +703,9 @@ const FeedSheet: React.FC = () => {
           <button 
   onClick={() => {
     const entriesWithPredictions = entries.map(entry => {
-      const adjustment = getAdjustmentForScore(entry.bunkScore, config.bunkScoreAdjustments || []);
-      const predictedMSPerHead = entry.prevConsumptionMS * (1 + (adjustment / 100));
+      const predictedMSPerHead = computeTargetMSPerHead(
+        entry.prevConsumptionMS, entry.bunkScore, config, entry.manualMsAdjustmentKg
+      );
       const msTotalKg = predictedMSPerHead * entry.headCount;
       const isStepMode = entry.dietsPerTrato.some(d => d !== entry.dietId);
 
@@ -739,7 +773,8 @@ const FeedSheet: React.FC = () => {
               <tr>
                 <th className="px-4 py-4 min-w-[180px]">Baia / Lote</th>
                 <th className="px-4 py-4">Dieta</th>
-                <th className="px-4 py-4 text-center min-w-[140px]">Leitura Cocho</th>
+                <th className="px-4 py-4 text-center min-w-[110px]">Leitura Cocho</th>
+                <th className="px-4 py-4 text-center min-w-[120px]">MS total (kg/cab)</th>
                 <th className="px-4 py-4 text-center">Previsto (MN)</th>
                 {Array.from({ length: config.numTreatments || 4 }).map((_, i) => (
                   <th key={i} className="px-4 py-4 text-center min-w-[100px]">
@@ -754,16 +789,23 @@ const FeedSheet: React.FC = () => {
             <tbody className="divide-y divide-slate-100">
               {entries.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="p-8 text-center text-slate-400">
+                  <td colSpan={10} className="p-8 text-center text-slate-400">
                     Nenhum lote ativo encontrado para esta data.
                   </td>
                 </tr>
               )}
               {entries.map((entry, index) => {
-                const adjustment = getAdjustmentForScore(entry.bunkScore, config.bunkScoreAdjustments || []);
-                
-                // F-13 Calculation Display
-                const predictedMSPerHead = (entry.prevConsumptionMS || 0) * (1 + (adjustment / 100));
+                const isKgMode = config.bunkAdjustmentMode === 'kg';
+                const isManualAdj = entry.manualMsAdjustmentKg !== null;
+
+                // F-13: meta MS/cab (pontual > escore kg > escore %)
+                const predictedMSPerHead = computeTargetMSPerHead(
+                  entry.prevConsumptionMS || 0, entry.bunkScore, config, entry.manualMsAdjustmentKg
+                );
+                const adjKgEffective = predictedMSPerHead - (entry.prevConsumptionMS || 0);
+                const adjustment = (entry.prevConsumptionMS || 0) > 0
+                  ? ((predictedMSPerHead / entry.prevConsumptionMS) - 1) * 100
+                  : 0;
                 // Convert back to MN: MN = MS / (DietMS%/100)
                 const dietMSFactor = (entry.dietMS || 60) / 100;
                 const predictedMNPerHead = dietMSFactor > 0 ? (predictedMSPerHead / dietMSFactor) : 0;
@@ -853,10 +895,34 @@ const FeedSheet: React.FC = () => {
                         <span className="inline-flex items-center px-2.5 py-1 rounded-lg bg-slate-100 text-slate-800 text-xs font-black">
                           Sc {String(entry.bunkScore).replace('.', ',')}
                         </span>
-                        <span className={`text-[10px] font-bold ${adjustment > 0 ? 'text-emerald-600' : adjustment < 0 ? 'text-red-500' : 'text-slate-400'}`}>
-                          {adjustment > 0 ? '+' : ''}{String(adjustment).replace('.', ',')}%
+                        <span className={`text-[10px] font-bold ${adjKgEffective > 0 ? 'text-emerald-600' : adjKgEffective < 0 ? 'text-red-500' : 'text-slate-400'}`}>
+                          {isKgMode || isManualAdj
+                            ? `${adjKgEffective > 0 ? '+' : ''}${adjKgEffective.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg`
+                            : `${adjustment > 0 ? '+' : ''}${adjustment.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`}
                         </span>
                         <Link to="/bunk" className="text-[9px] text-blue-500 hover:underline">alterar</Link>
+                      </div>
+                    </td>
+
+                    {/* Ajuste pontual em kg MS/cab + meta do dia */}
+                    <td className={`px-4 py-4 text-center ${isManualAdj ? 'bg-amber-50/60' : ''}`}>
+                      <div className="flex flex-col items-center gap-0.5">
+                        <input
+                          type="number"
+                          step="0.001"
+                          value={entry.manualMsAdjustmentKg ?? ''}
+                          onChange={(e) => handleManualAdjChange(index, e.target.value)}
+                          disabled={entry.isSaved}
+                          placeholder="ex: 10,500"
+                          title="MS total a fornecer por cabeça (kg) — substitui o cálculo do escore só neste lote"
+                          className={`w-20 px-2 py-1 border rounded text-center text-xs focus:ring-2 focus:ring-amber-400 outline-none disabled:bg-slate-100 ${isManualAdj ? 'border-amber-400 bg-white font-bold text-amber-800' : 'border-dashed border-slate-300 text-slate-600'}`}
+                        />
+                        {isManualAdj && (
+                          <span className="text-[9px] font-bold text-amber-600">pontual ativo</span>
+                        )}
+                        <span className="text-[10px] text-slate-500">
+                          Meta: <strong className="text-slate-700">{predictedMSPerHead.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })}</strong> kg/cab
+                        </span>
                       </div>
                     </td>
 
@@ -865,16 +931,18 @@ const FeedSheet: React.FC = () => {
                         <span className="font-mono text-lg font-semibold text-slate-700">
                           {predictedTotalMN.toLocaleString('pt-BR')}
                         </span>
-                        {adjustment !== 0 && (
-                          <span className={`text-[10px] font-bold ${adjustment > 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-                            {adjustment > 0 ? '▲' : '▼'} {Math.abs(adjustment)}%
+                        {adjKgEffective !== 0 && (
+                          <span className={`text-[10px] font-bold ${adjKgEffective > 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                            {adjKgEffective > 0 ? '▲' : '▼'} {isKgMode || isManualAdj
+                              ? `${Math.abs(adjKgEffective).toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg`
+                              : `${Math.abs(adjustment).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`}
                           </span>
                         )}
                         {/* Tooltip for F-13 logic explanation */}
                         <div className="absolute bottom-full mb-2 hidden group-hover:block w-48 bg-slate-800 text-white text-xs p-2 rounded z-10 text-left">
                           <p className="font-bold border-b border-slate-600 pb-1 mb-1">Cálculo (F-13)</p>
                           <p>Cons. Anterior (MS): {entry.prevConsumptionMS.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg</p>
-                          <p>Correção: {adjustment}%</p>
+                          <p>Ajuste: {adjKgEffective > 0 ? '+' : ''}{adjKgEffective.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg MS/cab{isManualAdj ? ' (pontual)' : ''}</p>
                           <p>Meta MS: {predictedMSPerHead.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg</p>
                           <p>Meta MN/cab: {predictedMNPerHead.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg</p>
                         </div>
@@ -987,8 +1055,15 @@ const FeedSheet: React.FC = () => {
           </div>
         )}
         {entries.map((entry, index) => {
-          const adjustment = getAdjustmentForScore(entry.bunkScore, config.bunkScoreAdjustments || []);
-          const predictedMSPerHead = (entry.prevConsumptionMS || 0) * (1 + (adjustment / 100));
+          const isKgMode = config.bunkAdjustmentMode === 'kg';
+          const isManualAdj = entry.manualMsAdjustmentKg !== null;
+          const predictedMSPerHead = computeTargetMSPerHead(
+            entry.prevConsumptionMS || 0, entry.bunkScore, config, entry.manualMsAdjustmentKg
+          );
+          const adjKgEffective = predictedMSPerHead - (entry.prevConsumptionMS || 0);
+          const adjustment = (entry.prevConsumptionMS || 0) > 0
+            ? ((predictedMSPerHead / entry.prevConsumptionMS) - 1) * 100
+            : 0;
           const dietMSFactor = (entry.dietMS || 60) / 100;
           const predictedMNPerHead = dietMSFactor > 0 ? (predictedMSPerHead / dietMSFactor) : 0;
           const isStepMode = entry.dietsPerTrato.some(d => d !== entry.dietId);
@@ -1043,17 +1118,40 @@ const FeedSheet: React.FC = () => {
               </div>
 
               {/* Escore vem da tela "Leitura de Cocho" (somente leitura aqui) */}
-              <div className="p-3 border-b flex items-center justify-between">
-                <div>
-                  <div className="text-[10px] font-bold text-slate-500 uppercase">Leitura Cocho</div>
-                  <div className="text-sm font-black text-slate-800">
-                    Sc {String(entry.bunkScore).replace('.', ',')}
-                    <span className={`ml-2 text-[11px] font-bold ${adjustment > 0 ? 'text-emerald-600' : adjustment < 0 ? 'text-red-500' : 'text-slate-400'}`}>
-                      {adjustment > 0 ? '+' : ''}{String(adjustment).replace('.', ',')}%
-                    </span>
+              <div className="p-3 border-b">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-[10px] font-bold text-slate-500 uppercase">Leitura Cocho</div>
+                    <div className="text-sm font-black text-slate-800">
+                      Sc {String(entry.bunkScore).replace('.', ',')}
+                      <span className={`ml-2 text-[11px] font-bold ${adjKgEffective > 0 ? 'text-emerald-600' : adjKgEffective < 0 ? 'text-red-500' : 'text-slate-400'}`}>
+                        {isKgMode || isManualAdj
+                          ? `${adjKgEffective > 0 ? '+' : ''}${adjKgEffective.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg`
+                          : `${adjustment > 0 ? '+' : ''}${adjustment.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`}
+                      </span>
+                    </div>
+                  </div>
+                  <Link to="/bunk" className="text-[11px] text-blue-600 font-bold hover:underline">Alterar</Link>
+                </div>
+                <div className={`mt-2 flex items-center gap-2 rounded-lg p-2 ${isManualAdj ? 'bg-amber-50 border border-amber-200' : 'bg-slate-50'}`}>
+                  <div className="flex-1">
+                    <div className="text-[9px] font-bold text-slate-500 uppercase">MS total pontual (kg/cab)</div>
+                    <input
+                      type="number"
+                      step="0.001"
+                      inputMode="decimal"
+                      value={entry.manualMsAdjustmentKg ?? ''}
+                      onChange={(e) => handleManualAdjChange(index, e.target.value)}
+                      disabled={entry.isSaved}
+                      placeholder="ex: 10,500 (vazio = escore)"
+                      className={`w-full mt-0.5 px-2 py-1 border rounded text-center text-xs outline-none focus:ring-2 focus:ring-amber-400 disabled:bg-slate-100 ${isManualAdj ? 'border-amber-400 font-bold text-amber-800' : 'border-dashed border-slate-300'}`}
+                    />
+                  </div>
+                  <div className="text-right">
+                    <div className="text-[9px] font-bold text-slate-500 uppercase">Meta MS</div>
+                    <div className="text-sm font-black text-slate-800">{predictedMSPerHead.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} <span className="text-[9px] font-bold text-slate-400">kg/cab</span></div>
                   </div>
                 </div>
-                <Link to="/bunk" className="text-[11px] text-blue-600 font-bold hover:underline">Alterar</Link>
               </div>
 
               {/* Tratos */}

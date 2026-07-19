@@ -113,6 +113,8 @@ export interface AnimalMovement {
 export interface BunkScoreAdjustment {
   score: BunkScore;
   adjustmentPercentage: number; // percentage (e.g., -5 for -5%)
+  /** Ajuste em kg de MS por cabeça (modo 'kg'). Ex: +0.200, -1.000 */
+  adjustmentKgMS?: number;
 }
 
 export interface DailyFeedRecord {
@@ -136,6 +138,8 @@ export interface DailyFeedRecord {
   // Bunk Management
   bunkScoreYesterday: BunkScore;
   adjustmentPercentage: number; // Derived from bunk score rule
+  /** Ajuste pontual em kg MS/cab digitado pra este lote/dia (substitui o do escore) */
+  manualMsAdjustmentKg?: number | null;
   
   // Consumption
   predictedTotalMN: number; // Total Predicted Natural Matter
@@ -156,6 +160,8 @@ export interface AppConfig {
   treatmentProportions: number[]; // sum must be 100
   firstTratoMSPercentPV: number; // Predicted MS for first day
   bunkScoreAdjustments: BunkScoreAdjustment[];
+  /** Como a escala corrige o fornecimento: '%' do dia anterior ou kg de MS/cab */
+  bunkAdjustmentMode?: 'percent' | 'kg';
   // Loading limits for UI warnings
   loadingLimitLower: number;
   loadingLimitUpper: number;
