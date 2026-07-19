@@ -443,3 +443,52 @@ export const generateFechamentoConsolidadoExcel = (rows: FechamentoConsolidadoRo
 
 
 
+
+/** Excel do Estoque de Insumos: aba Saldo + aba Entradas/Saídas */
+export const generateEstoqueExcel = (
+  saldo: { insumo: string; saldoKg: number; precoMedio: number; valorTotal: number }[],
+  extrato: {
+    data: string; insumo: string; tipo: string; quantidadeKg: number; precoKg: number;
+    valor: number; saldoAposKg: number; precoMedioApos: number; nota: string; fornecedor: string; obs: string;
+  }[],
+  date: string
+) => {
+  const wb = XLSX.utils.book_new();
+  const r2 = (v: number) => Number((Number.isFinite(v) ? v : 0).toFixed(2));
+  const r4 = (v: number) => Number((Number.isFinite(v) ? v : 0).toFixed(4));
+
+  const saldoRows = saldo.map((r) => ({
+    'Insumo': r.insumo,
+    'Saldo (kg)': r2(r.saldoKg),
+    'Preço Médio (R$/kg)': r4(r.precoMedio),
+    'Valor em Estoque (R$)': r2(r.valorTotal),
+  }));
+  saldoRows.push({
+    'Insumo': 'TOTAL',
+    'Saldo (kg)': '' as any,
+    'Preço Médio (R$/kg)': '' as any,
+    'Valor em Estoque (R$)': r2(saldo.reduce((a, b) => a + b.valorTotal, 0)),
+  });
+  const wsSaldo = XLSX.utils.json_to_sheet(saldoRows);
+  wsSaldo['!cols'] = [{ wch: 28 }, { wch: 14 }, { wch: 18 }, { wch: 20 }];
+  XLSX.utils.book_append_sheet(wb, wsSaldo, 'Saldo');
+
+  const extratoRows = extrato.map((r) => ({
+    'Data': r.data.split('-').reverse().join('/'),
+    'Insumo': r.insumo,
+    'Tipo': r.tipo,
+    'Quantidade (kg)': r2(r.quantidadeKg),
+    'Preço (R$/kg)': r4(r.precoKg),
+    'Valor (R$)': r2(r.valor),
+    'Saldo Após (kg)': r2(r.saldoAposKg),
+    'Preço Médio Após (R$/kg)': r4(r.precoMedioApos),
+    'Nota': r.nota,
+    'Fornecedor': r.fornecedor,
+    'Observação': r.obs,
+  }));
+  const wsExtrato = XLSX.utils.json_to_sheet(extratoRows);
+  wsExtrato['!cols'] = [{ wch: 10 }, { wch: 24 }, { wch: 11 }, { wch: 14 }, { wch: 13 }, { wch: 13 }, { wch: 14 }, { wch: 20 }, { wch: 12 }, { wch: 20 }, { wch: 24 }];
+  XLSX.utils.book_append_sheet(wb, wsExtrato, 'Entradas-Saídas');
+
+  XLSX.writeFile(wb, `estoque-insumos-${date}.xlsx`);
+};

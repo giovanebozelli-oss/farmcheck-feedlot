@@ -122,7 +122,7 @@ const cleanOldDrafts = () => {
 };
 
 const FeedSheet: React.FC = () => {
-  const { lots, pens, diets, config, feedHistory, getActiveHeadCount, addFeedRecord, movements, updateLot, bunkReadings } = useAppStore();
+  const { lots, pens, diets, config, feedHistory, getActiveHeadCount, addFeedRecord, movements, updateLot, bunkReadings, effectiveDietCosts } = useAppStore();
   const [selectedDate, setSelectedDate] = useSessionState<string>('feedsheet.date', new Date().toISOString().split('T')[0]);
   const [entries, setEntries] = useState<SheetEntry[]>([]);
 
@@ -245,7 +245,7 @@ const FeedSheet: React.FC = () => {
           dietName: diet?.name || '?',
           dietId: existingRecord.dietId || diet?.id || '',
           dietMS: diet?.calculatedDryMatter || 0,
-          dietCost: diet?.calculatedCostPerKg || 0,
+          dietCost: (diet ? (effectiveDietCosts[diet.id] ?? diet.calculatedCostPerKg) : 0) || 0,
           dietsPerTrato,
           prevConsumptionMS: prevConsMS,
           bunkScore: existingRecord.bunkScoreYesterday,
@@ -274,7 +274,7 @@ const FeedSheet: React.FC = () => {
           dietName: diet?.name || '?',
           dietId: draft.dietId || diet?.id || '',
           dietMS: diet?.calculatedDryMatter || 60,
-          dietCost: diet?.calculatedCostPerKg || 0,
+          dietCost: (diet ? (effectiveDietCosts[diet.id] ?? diet.calculatedCostPerKg) : 0) || 0,
           dietsPerTrato: (draft.dietsPerTrato && draft.dietsPerTrato.length === numTratos)
             ? draft.dietsPerTrato
             : (inheritedDietsPerTrato || Array(numTratos).fill(diet?.id || '')),
@@ -299,7 +299,7 @@ const FeedSheet: React.FC = () => {
         dietName: diet?.name || '?',
         dietId: diet?.id || '',
         dietMS: diet?.calculatedDryMatter || 60, // Fallback safe div
-        dietCost: diet?.calculatedCostPerKg || 0,
+        dietCost: (diet ? (effectiveDietCosts[diet.id] ?? diet.calculatedCostPerKg) : 0) || 0,
         dietsPerTrato: inheritedDietsPerTrato || Array(numTratos).fill(diet?.id || ''),
         prevConsumptionMS: prevConsMS,
         bunkScore: dayScore,
@@ -313,7 +313,7 @@ const FeedSheet: React.FC = () => {
     });
 
     setEntries(newEntries);
-  }, [selectedDate, lots, pens, diets, feedHistory, config, headCounts, bunkReadings]); // Inclui headCounts e bunkReadings para reatividade
+  }, [selectedDate, lots, pens, diets, feedHistory, config, headCounts, bunkReadings, effectiveDietCosts]); // Inclui headCounts e bunkReadings para reatividade
 
   // ======================================================================
   // PERSISTÊNCIA DE RASCUNHOS (localStorage) — não perde valores digitados
@@ -494,7 +494,7 @@ const FeedSheet: React.FC = () => {
           dietId: diet.id, 
           dietName: diet.name, 
           dietMS: diet.calculatedDryMatter, 
-          dietCost: diet.calculatedCostPerKg,
+          dietCost: effectiveDietCosts[diet.id] ?? diet.calculatedCostPerKg,
           // Reseta o step: todos os tratos voltam pra dieta principal
           dietsPerTrato: Array(numTratos).fill(diet.id),
           isSaved: false

@@ -11,7 +11,7 @@ import {
   ArrowRightLeft,
   LogOut,
   Database,
-  Wheat,
+  Wheat, Warehouse,
   Users
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -75,6 +75,7 @@ const Layout: React.FC = () => {
     { to: "/bunk", icon: <ClipboardCheck size={20} />, label: "Leitura de Cocho", adminOnly: false },
     { to: "/feed", icon: <ClipboardList size={20} />, label: "Ficha de Trato", adminOnly: false },
     { to: "/nutrition", icon: <Wheat size={20} />, label: "Nutrição", adminOnly: false },
+    { to: "/stock", icon: <Warehouse size={20} />, label: "Estoque de Insumos", adminOnly: false },
     { to: "/movements", icon: <ArrowRightLeft size={20} />, label: "Movimentação de Rebanho", adminOnly: false },
     { to: "/reports", icon: <FileText size={20} />, label: "Relatório Zootécnico", adminOnly: false },
     { to: "/users", icon: <Users size={20} />, label: "Usuários", adminOnly: true },

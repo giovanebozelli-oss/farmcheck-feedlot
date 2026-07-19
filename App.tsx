@@ -3,6 +3,7 @@ import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
 import Dashboard from './components/Dashboard';
 import BunkReadingPage from './components/BunkReading';
+import StockPage from './components/StockPage';
 import FeedSheet from './components/FeedSheet';
 import Reports from './components/Reports';
 import Settings from './components/Settings';
@@ -23,6 +24,7 @@ const App: React.FC = () => {
             <Route path="feed" element={<FeedSheet />} />
             <Route path="database" element={<LotDatabase />} />
             <Route path="nutrition" element={<Nutrition />} />
+            <Route path="stock" element={<StockPage />} />
             <Route path="movements" element={<AnimalMovementPage />} />
             <Route path="reports" element={<Reports />} />
             <Route path="users" element={<UserManagement />} />

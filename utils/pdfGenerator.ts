@@ -930,3 +930,89 @@ export const generateLeituraCochoPDF = (
 
   doc.save(`leitura-cocho-${date}.pdf`);
 };
+
+/**
+ * Relatório PDF do Estoque de Insumos: saldo por insumo + extrato de
+ * entradas/saídas (com nota, fornecedor e preço médio após cada evento).
+ */
+export const generateEstoquePDF = (
+  saldo: { insumo: string; saldoKg: number; precoMedio: number; valorTotal: number }[],
+  extrato: {
+    data: string; insumo: string; tipo: string; quantidadeKg: number; precoKg: number;
+    valor: number; saldoAposKg: number; precoMedioApos: number; nota: string; fornecedor: string; obs: string;
+  }[],
+  date: string
+) => {
+  const doc = new jsPDF('landscape');
+  const pageWidth = doc.internal.pageSize.getWidth();
+
+  const num = (v: number, d = 2) =>
+    (Number.isFinite(v) ? v : 0).toLocaleString('pt-BR', { minimumFractionDigits: d, maximumFractionDigits: d });
+
+  doc.setFontSize(18);
+  doc.setTextColor(16, 185, 129);
+  doc.text('GMC — Gestão de Confinamento', 14, 18);
+  doc.setFontSize(13);
+  doc.setTextColor(80);
+  doc.text('Estoque de Insumos', 14, 26);
+  doc.setFontSize(10);
+  doc.setTextColor(100);
+  doc.text(`Emitido em: ${date.split('-').reverse().join('/')}`, 14, 32);
+
+  // ---- Saldo ----
+  autoTable(doc, {
+    startY: 38,
+    head: [['Insumo', 'Saldo (kg)', 'Preço médio (R$/kg)', 'Valor em estoque (R$)']],
+    body: saldo.map((r) => [r.insumo, num(r.saldoKg, 0), num(r.precoMedio, 4), num(r.valorTotal, 2)]),
+    foot: [[
+      'TOTAL', '', '',
+      num(saldo.reduce((a, b) => a + b.valorTotal, 0), 2),
+    ]],
+    headStyles: { fillColor: [16, 185, 129], fontSize: 8 },
+    footStyles: { fillColor: [241, 245, 249], textColor: [15, 23, 42], fontStyle: 'bold', fontSize: 8 },
+    alternateRowStyles: { fillColor: [248, 250, 252] },
+    styles: { fontSize: 8, cellPadding: 2 },
+    columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' } },
+  });
+
+  // ---- Extrato ----
+  const afterY = (doc as any).lastAutoTable?.finalY || 60;
+  doc.setFontSize(12);
+  doc.setTextColor(80);
+  doc.text('Entradas / Saídas', 14, afterY + 10);
+
+  autoTable(doc, {
+    startY: afterY + 14,
+    head: [['Data', 'Insumo', 'Tipo', 'Qtd (kg)', 'R$/kg', 'Valor (R$)', 'Saldo após', 'Preço médio após', 'Nota', 'Fornecedor', 'Obs.']],
+    body: extrato.map((r) => [
+      r.data.split('-').reverse().join('/'),
+      r.insumo,
+      r.tipo,
+      num(r.quantidadeKg, 1),
+      num(r.precoKg, 4),
+      num(r.valor, 2),
+      num(r.saldoAposKg, 1),
+      num(r.precoMedioApos, 4),
+      r.nota || '-',
+      r.fornecedor || '-',
+      r.obs || '-',
+    ]),
+    headStyles: { fillColor: [16, 185, 129], fontSize: 7 },
+    alternateRowStyles: { fillColor: [248, 250, 252] },
+    styles: { fontSize: 7, cellPadding: 1.5 },
+    columnStyles: { 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' }, 6: { halign: 'right' }, 7: { halign: 'right' } },
+    didParseCell: (data) => {
+      if (data.section === 'body' && data.column.index === 3) {
+        const raw = extrato[data.row.index];
+        if (raw && raw.quantidadeKg < 0) data.cell.styles.textColor = [220, 38, 38];
+      }
+    },
+  });
+
+  const pageHeight = doc.internal.pageSize.getHeight();
+  doc.setFontSize(7);
+  doc.setTextColor(150);
+  doc.text('GMC — Gestão de Confinamento', pageWidth - 14, pageHeight - 8, { align: 'right' });
+
+  doc.save(`estoque-insumos-${date}.pdf`);
+};

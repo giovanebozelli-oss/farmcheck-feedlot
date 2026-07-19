@@ -60,8 +60,18 @@ import {
   closingFromDb,
   bunkReadingFromDb,
   bunkReadingToDb,
+  stockMovementFromDb,
+  stockMovementToDb,
 } from './lib/dbMappers';
 import type { RealtimeChannel } from '@supabase/supabase-js';
+import {
+  StockMovement,
+  IngredientStockInfo,
+  calculateDailyIngredientConsumption,
+  buildStockLedgers,
+  withEffectivePrices,
+} from './utils/stock';
+
 
 // ----------------------------------------------------------------
 // Context shape
@@ -115,6 +125,15 @@ interface AppContextType {
   addFeedRecord: (record: DailyFeedRecord) => Promise<void>;
   bunkReadings: BunkReading[];
   saveBunkReading: (reading: BunkReading) => Promise<void>;
+  stockMovements: StockMovement[];
+  addStockMovement: (m: StockMovement) => Promise<void>;
+  deleteStockMovement: (id: string) => Promise<void>;
+  /** Extrato/saldo de estoque por insumo (média ponderada móvel) */
+  stockLedgers: Map<string, IngredientStockInfo>;
+  /** Ingredientes com preço efetivo (estoque quando houver, senão cadastro) */
+  effectiveIngredients: Ingredient[];
+  /** Custo efetivo por kg MN de cada dieta (usa preços efetivos) */
+  effectiveDietCosts: Record<string, number>;
   deleteFeedRecord: (id: string) => Promise<void>;
 
   // Fechamentos
@@ -189,6 +208,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [categories, setCategories] = useState<Category[]>([]);
   const [closings, setClosings] = useState<Closing[]>([]);
   const [bunkReadings, setBunkReadings] = useState<BunkReading[]>([]);
+  const [stockMovements, setStockMovements] = useState<StockMovement[]>([]);
 
   // ----- Auth bootstrap: lê sessão do Supabase + subscreve mudanças -----
   const refreshProfile = useCallback(async () => {
@@ -331,6 +351,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setFeedHistory([]);
       setClosings([]);
       setBunkReadings([]);
+      setStockMovements([]);
       setConfig(DEFAULT_CONFIG);
       return;
     }
@@ -350,6 +371,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         feedRes,
         closingsRes,
         bunkRes,
+        stockRes,
       ] = await Promise.all([
         supabase.from('fc_config').select('*').eq('owner_id', user.id).maybeSingle(),
         supabase.from('fc_lots').select('*'),
@@ -361,6 +383,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         supabase.from('fc_feed_records').select('*').order('date', { ascending: false }),
         supabase.from('fc_closings').select('*').order('closing_date', { ascending: false }),
         supabase.from('fc_bunk_readings').select('*').order('date', { ascending: false }),
+        supabase.from('fc_stock_movements').select('*').order('date', { ascending: true }),
       ]);
 
       if (cancelled) return;
@@ -368,7 +391,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       // Se qualquer carga falhou, avisa o usuário — NUNCA mostra sistema vazio em silêncio
       const loadError =
         cfgRes.error || lotsRes.error || pensRes.error || ingsRes.error || dietsRes.error ||
-        catsRes.error || movsRes.error || feedRes.error || closingsRes.error || bunkRes.error;
+        catsRes.error || movsRes.error || feedRes.error || closingsRes.error || bunkRes.error || stockRes.error;
       if (loadError) {
         console.error('[loadAll] erro ao carregar dados:', loadError);
         alert(
@@ -403,6 +426,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setClosings(closingsRes.data.map((r) => closingFromDb(r as Record<string, unknown>)));
       if (bunkRes.data)
         setBunkReadings(bunkRes.data.map((r) => bunkReadingFromDb(r as Record<string, unknown>) as BunkReading));
+      if (stockRes.data)
+        setStockMovements(stockRes.data.map((r) => stockMovementFromDb(r as Record<string, unknown>) as StockMovement));
 
       // 2. Subscriptions granulares (cada uma só atualiza seu próprio state)
       const channels: RealtimeChannel[] = [
@@ -415,6 +440,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         subscribeToTable<DailyFeedRecord>('fc_feed_records', setFeedHistory, feedRecordFromDb, user.id),
         subscribeToTable<Closing>('fc_closings', setClosings, closingFromDb, user.id),
         subscribeToTable<BunkReading>('fc_bunk_readings', setBunkReadings, (r) => bunkReadingFromDb(r) as BunkReading, user.id),
+        subscribeToTable<StockMovement>('fc_stock_movements', setStockMovements, (r) => stockMovementFromDb(r) as StockMovement, user.id),
       ];
 
       // Config é singleton — listener separado
@@ -720,6 +746,44 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   // ----- Feed Records -----
+  const addStockMovement = async (m: StockMovement) => {
+    if (!user) return;
+    const { error } = await supabase
+      .from('fc_stock_movements')
+      .insert({ ...stockMovementToDb(m), owner_id: user.id });
+    if (error) throw error;
+    setStockMovements((prev) => (prev.some((x) => x.id === m.id) ? prev : [...prev, m]));
+  };
+
+  const deleteStockMovement = async (id: string) => {
+    const { error } = await supabase.from('fc_stock_movements').delete().eq('id', id);
+    if (error) throw error;
+    setStockMovements((prev) => prev.filter((m) => m.id !== id));
+  };
+
+  // ----- Estoque: extrato + preços efetivos (derivados, sempre consistentes) -----
+  const stockLedgers = useMemo(() => {
+    const consumption = calculateDailyIngredientConsumption(feedHistory, diets);
+    return buildStockLedgers(stockMovements, consumption);
+  }, [stockMovements, feedHistory, diets]);
+
+  const effectiveIngredients = useMemo(
+    () => withEffectivePrices(ingredients, stockLedgers),
+    [ingredients, stockLedgers]
+  );
+
+  const effectiveDietCosts = useMemo(() => {
+    const costs: Record<string, number> = {};
+    for (const d of diets) {
+      try {
+        costs[d.id] = calculateDietMetrics(d, effectiveIngredients).costPerKgMN;
+      } catch {
+        costs[d.id] = d.calculatedCostPerKg || 0;
+      }
+    }
+    return costs;
+  }, [diets, effectiveIngredients]);
+
   const saveBunkReading = async (reading: BunkReading) => {
     if (!user) return;
     const finalId = `${reading.date}_${reading.lotId}`;
@@ -1009,6 +1073,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         addFeedRecord,
         bunkReadings,
         saveBunkReading,
+        stockMovements,
+        addStockMovement,
+        deleteStockMovement,
+        stockLedgers,
+        effectiveIngredients,
+        effectiveDietCosts,
         deleteFeedRecord,
         closings,
         upsertClosing,

@@ -6,7 +6,7 @@ import { Ingredient, Diet, DietIngredient } from '../types';
 import { calculateDietMetrics } from '../utils';
 
 const IngredientsTab = () => {
-  const { ingredients, addIngredient, removeIngredient, updateIngredient } = useAppStore();
+  const { ingredients, addIngredient, removeIngredient, updateIngredient, stockLedgers } = useAppStore();
   const [isAdding, setIsAdding] = useState(false);
   const [editingIngId, setEditingIngId] = useState<string | null>(null);
   const [editingItem, setEditingItem] = useState<Partial<Ingredient>>({});
@@ -171,13 +171,27 @@ const IngredientsTab = () => {
                         <span className="bg-slate-100 px-2 py-1 rounded text-slate-600 font-black font-mono">{ing.dryMatterContent}%</span>
                       </td>
                       <td className="py-4 px-4 text-center text-slate-500 font-medium">
-                        {ing.pricePerTon.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL', minimumFractionDigits: 0})}
+                        {(() => {
+                          const info = stockLedgers.get(ing.id);
+                          const usesStock = !!info?.hasStock;
+                          const effTon = usesStock ? (info!.avgPricePerKg * 1000) : ing.pricePerTon;
+                          return (
+                            <div className="flex flex-col items-center gap-0.5">
+                              <span>{effTon.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL', minimumFractionDigits: 0})}</span>
+                              {usesStock && (
+                                <span className="bg-emerald-100 text-emerald-700 text-[9px] font-bold px-1.5 py-0.5 rounded-full" title="Preço médio ponderado do estoque (o valor do cadastro fica como reserva)">
+                                  estoque
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </td>
                       <td className="py-4 px-4 text-right font-mono font-bold text-slate-700 text-xs">
-                        R$ {(ing.pricePerTon / 1000).toLocaleString('pt-BR', { minimumFractionDigits: 4, maximumFractionDigits: 4 })}
+                        R$ {(() => { const info = stockLedgers.get(ing.id); const eff = info?.hasStock ? info.avgPricePerKg * 1000 : ing.pricePerTon; return (eff / 1000).toLocaleString('pt-BR', { minimumFractionDigits: 4, maximumFractionDigits: 4 }); })()}
                       </td>
                       <td className="py-4 px-4 text-right font-mono font-black text-emerald-700 bg-emerald-50/20">
-                        R$ {(ing.pricePerTon / 1000 / (ing.dryMatterContent / 100)).toLocaleString('pt-BR', { minimumFractionDigits: 4, maximumFractionDigits: 4 })}
+                        R$ {(() => { const info = stockLedgers.get(ing.id); const eff = info?.hasStock ? info.avgPricePerKg * 1000 : ing.pricePerTon; return (eff / 1000 / (ing.dryMatterContent / 100)).toLocaleString('pt-BR', { minimumFractionDigits: 4, maximumFractionDigits: 4 }); })()}
                       </td>
                       <td className="py-4 px-4 text-right flex gap-1 justify-end">
                         <button 
@@ -210,7 +224,7 @@ const IngredientsTab = () => {
 };
 
 const DietsTab = () => {
-  const { diets, ingredients, addDiet, updateDiet, removeDiet } = useAppStore();
+  const { diets, ingredients, addDiet, updateDiet, removeDiet, effectiveIngredients, effectiveDietCosts } = useAppStore();
   const [activeDietId, setActiveDietId] = useState<string | null>(diets[0]?.id || null);
   const [editingDiet, setEditingDiet] = useState<Diet | null>(null);
   
@@ -312,7 +326,8 @@ const DietsTab = () => {
   };
 
    const calculateDietTotals = (dietIngs: DietIngredient[]) => {
-    const metrics = calculateDietMetrics({ ingredients: dietIngs } as Diet, ingredients);
+    // Usa preços efetivos: estoque (média ponderada) quando houver, senão cadastro
+    const metrics = calculateDietMetrics({ ingredients: dietIngs } as Diet, effectiveIngredients);
     
     // Total % MS
     const totalMSPercentage = dietIngs.reduce((acc, curr) => acc + curr.inclusionMSPercentage, 0);
@@ -387,7 +402,7 @@ const DietsTab = () => {
               </div>
               <div className="text-[10px] text-slate-500 mt-2 flex justify-between font-bold">
                 <span className="bg-white/50 px-1.5 rounded border border-slate-100">MS: {diet.calculatedDryMatter.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%</span>
-                <span className="text-emerald-600">R$ {diet.calculatedCostPerKg.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })}/kg MN</span>
+                <span className="text-emerald-600">R$ {(effectiveDietCosts[diet.id] ?? diet.calculatedCostPerKg).toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })}/kg MN</span>
               </div>
             </div>
           ))}
@@ -432,7 +447,7 @@ const DietsTab = () => {
                       <div key={idx} className="flex items-center gap-4 p-4 rounded-xl border border-slate-100 bg-slate-50/50 hover:bg-white hover:shadow-md transition-all">
                         <div className="flex-1">
                           <div className="text-sm font-black text-slate-800 italic uppercase">{ing?.name || 'Desconhecido'}</div>
-                          <div className="text-[10px] text-slate-400 font-bold uppercase">MS: {ing?.dryMatterContent}% | Custo MN: R$ {(ing?.pricePerTon || 0) / 1000}/kg</div>
+                          <div className="text-[10px] text-slate-400 font-bold uppercase">MS: {ing?.dryMatterContent}% | Custo MN: R$ {(((effectiveIngredients.find(e => e.id === ing?.id)?.pricePerTon ?? ing?.pricePerTon) || 0) / 1000).toLocaleString('pt-BR', { minimumFractionDigits: 4, maximumFractionDigits: 4 })}/kg</div>
                         </div>
                         <div className="flex items-center gap-8">
                            <div className="text-right">

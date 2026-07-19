@@ -252,3 +252,33 @@ export const bunkReadingToDb = (r: { id: string; date: string; lotId: string; sc
   score: r.score,
   manual_ms_total_kg: r.manualMsTotalKg ?? null,
 });
+
+// ---- StockMovement (estoque de insumos) ----
+export const stockMovementFromDb = (row: Record<string, unknown>) => ({
+  id: String(row.id),
+  date: String(row.date),
+  ingredientId: String(row.ingredient_id),
+  type: String(row.type) as 'entry' | 'adjust_in' | 'adjust_out',
+  quantityKg: Number(row.quantity_kg),
+  pricePerKg: row.price_per_kg === null || row.price_per_kg === undefined ? null : Number(row.price_per_kg),
+  invoice: (row.invoice as string) ?? null,
+  supplier: (row.supplier as string) ?? null,
+  notes: (row.notes as string) ?? null,
+  createdAt: (row.created_at as string) ?? undefined,
+});
+
+export const stockMovementToDb = (m: {
+  id: string; date: string; ingredientId: string; type: string;
+  quantityKg: number; pricePerKg: number | null;
+  invoice?: string | null; supplier?: string | null; notes?: string | null;
+}) => ({
+  id: m.id,
+  date: m.date,
+  ingredient_id: m.ingredientId,
+  type: m.type,
+  quantity_kg: m.quantityKg,
+  price_per_kg: m.pricePerKg,
+  invoice: m.invoice ?? null,
+  supplier: m.supplier ?? null,
+  notes: m.notes ?? null,
+});
