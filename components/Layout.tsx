@@ -186,38 +186,12 @@ const Layout: React.FC = () => {
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 overflow-auto custom-scrollbar p-6 lg:p-8 pb-24 lg:pb-8">
+        <main className="flex-1 overflow-auto custom-scrollbar p-6 lg:p-8">
           <div className="max-w-[1600px] mx-auto">
             <Outlet />
           </div>
         </main>
 
-        {/* Bottom Navigation (Mobile Only) */}
-        <nav className="lg:hidden fixed bottom-6 left-6 right-6 z-40 bg-slate-900/90 backdrop-blur-xl border border-white/10 rounded-[2rem] shadow-2xl p-2 flex items-center justify-around">
-          {navItems.slice(0, 4).map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              className={({ isActive }) => `
-                flex flex-col items-center justify-center w-14 h-14 rounded-2xl transition-all
-                ${isActive 
-                  ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/20 scale-110' 
-                  : 'text-slate-400 hover:text-slate-200'}
-              `}
-            >
-              {item.icon}
-            </NavLink>
-          ))}
-          <button 
-            onClick={toggleSidebar}
-            className={`
-              flex flex-col items-center justify-center w-14 h-14 rounded-2xl transition-all
-              ${isSidebarOpen ? 'bg-slate-800 text-emerald-500' : 'text-slate-400 hover:text-slate-200'}
-            `}
-          >
-            <Menu size={20} />
-          </button>
-        </nav>
       </div>
     </div>
   );
