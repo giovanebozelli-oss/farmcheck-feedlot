@@ -1,10 +1,58 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAppStore } from '../context';
 import { Settings as SettingsIcon, Warehouse, Plus, Trash2, Minus } from 'lucide-react';
 import { Pen, Lot, Ingredient } from '../types';
 import { DEFAULT_CONFIG } from '../constants';
 import { useSessionState } from '../lib/useSessionState';
+
+/**
+ * Input numérico tolerante: permite digitar "-" no início, vírgula ou ponto
+ * como separador decimal, e valores parciais (ex: "-0," enquanto digita).
+ * Só confirma no pai quando o texto é um número válido.
+ */
+const SignedNumberInput: React.FC<{
+  value: number;
+  onCommit: (v: number) => void;
+  className?: string;
+  placeholder?: string;
+}> = ({ value, onCommit, className, placeholder }) => {
+  const [text, setText] = useState<string>(String(value).replace('.', ','));
+  const [focused, setFocused] = useState(false);
+
+  useEffect(() => {
+    if (!focused) setText(String(value).replace('.', ','));
+  }, [value, focused]);
+
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      value={text}
+      placeholder={placeholder}
+      onFocus={() => setFocused(true)}
+      onBlur={() => {
+        setFocused(false);
+        const v = parseFloat(text.replace(',', '.'));
+        if (!isNaN(v)) {
+          if (v !== value) onCommit(v);
+        } else {
+          setText(String(value).replace('.', ','));
+        }
+      }}
+      onChange={(e) => {
+        const t = e.target.value;
+        // permite: vazio, "-", dígitos, uma vírgula/ponto decimal
+        if (/^-?\d*[.,]?\d*$/.test(t)) {
+          setText(t);
+          const v = parseFloat(t.replace(',', '.'));
+          if (!isNaN(v)) onCommit(v);
+        }
+      }}
+      className={className}
+    />
+  );
+};
 
 // Tab Components using Context
 const GeneralParamsTab = () => {
@@ -206,12 +254,10 @@ const GeneralParamsTab = () => {
                  >
                    <Minus size={16} strokeWidth={3} />
                  </button>
-                 <input 
-                   type="number" 
-                   step={isKgMode ? 0.001 : 0.5}
-                   className="w-full p-2 rounded border border-emerald-200 text-center font-bold" 
-                   value={newBunk.adjustmentPercentage} 
-                   onChange={e=>setNewBunk({...newBunk, adjustmentPercentage:Number(e.target.value)})} 
+                 <SignedNumberInput
+                   value={newBunk.adjustmentPercentage}
+                   onCommit={(v)=>setNewBunk(prev => ({...prev, adjustmentPercentage: v}))}
+                   className="w-full p-2 rounded border border-emerald-200 text-center font-bold"
                  />
                  <button 
                    onClick={() => setNewBunk(prev => ({ ...prev, adjustmentPercentage: Number((prev.adjustmentPercentage + (isKgMode ? 0.1 : 1)).toFixed(3)) }))}
@@ -249,19 +295,15 @@ const GeneralParamsTab = () => {
                     <td className="p-2 text-slate-600">{desc}</td>
                     <td className="p-2 text-right">
                       {isKgMode ? (
-                        <input
-                          type="number"
-                          step="0.001"
+                        <SignedNumberInput
                           value={rule.adjustmentKgMS ?? 0}
-                          onChange={(e) => handleScoreKgChange(idx, parseFloat(e.target.value) || 0)}
+                          onCommit={(v) => handleScoreKgChange(idx, v)}
                           className={`w-24 p-1 border rounded text-right font-bold ${(rule.adjustmentKgMS ?? 0) < 0 ? 'text-red-600' : 'text-emerald-600'}`}
                         />
                       ) : (
-                        <input
-                          type="number"
-                          step="0.5"
+                        <SignedNumberInput
                           value={rule.adjustmentPercentage}
-                          onChange={(e) => handleScoreAdjustmentChange(idx, parseFloat(e.target.value))}
+                          onCommit={(v) => handleScoreAdjustmentChange(idx, v)}
                           className={`w-20 p-1 border rounded text-right font-bold ${rule.adjustmentPercentage < 0 ? 'text-red-600' : 'text-emerald-600'}`}
                         />
                       )}
