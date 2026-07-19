@@ -229,3 +229,21 @@ export function withEffectivePrices(
     return ing;
   });
 }
+
+/**
+ * Preço médio ponderado vigente na data (R$/kg): último evento do extrato
+ * com data <= à consultada. Retorna null se não havia estoque até a data.
+ */
+export function avgPriceOnDate(info: IngredientStockInfo | undefined, date: string): number | null {
+  if (!info || !info.hasStock) return null;
+  let price: number | null = null;
+  let hasInflow = false;
+  for (const ev of info.events) {
+    if (ev.date <= date) {
+      if (ev.kind === 'entry' || ev.kind === 'adjust_in') hasInflow = true;
+      price = ev.avgPriceAfter;
+    } else break;
+  }
+  // Antes da primeira entrada não havia estoque — usa preço do cadastro (null)
+  return hasInflow ? price : null;
+}

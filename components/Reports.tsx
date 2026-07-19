@@ -5,6 +5,7 @@ import { calculateDaysOnFeed, calculateProjectedWeight, formatCurrency, calculat
 import { FileDown, FileText, Lock, Unlock, X, TrendingUp, ChevronRight, Trash2, Wheat, Edit2 } from 'lucide-react';
 import { generateZootecnicoPDF, generateInsumosPDF, generateLancamentosTratosPDF, generateLancamentosMovimentosPDF, generateFechamentoConsolidadoPDF, FechamentoConsolidadoRow } from '../utils/pdfGenerator';
 import { generateZootecnicoExcel, generateInsumosExcel, generateLancamentosTratosExcel, generateLancamentosMovimentosExcel, generateFechamentoConsolidadoExcel } from '../utils/excelGenerator';
+import { IngredientStockInfo, avgPriceOnDate } from '../utils/stock';
 import { MovementType, Lot, Pen, Diet, Ingredient, DailyFeedRecord } from '../types';
 import { useSessionState } from '../lib/useSessionState';
 import FechamentoFinanceiro from './FechamentoFinanceiro';
@@ -30,9 +31,18 @@ function computeInsumosUsage(
   ingredients: Ingredient[],
   startDate: string,
   endDate: string,
-  lotIdFilter?: string
+  lotIdFilter?: string,
+  stockLedgers?: Map<string, IngredientStockInfo>
 ) {
   const usage: Record<string, { quantity: number; cost: number }> = {};
+
+  // Preço do insumo NO DIA do consumo (R$/kg):
+  // com estoque → preço médio ponderado vigente na data;
+  // sem estoque (ou antes da 1ª movimentação) → preço do cadastro.
+  const priceOn = (ing: Ingredient, date: string): number => {
+    const fromStock = stockLedgers ? avgPriceOnDate(stockLedgers.get(ing.id), date) : null;
+    return fromStock !== null ? fromStock : (ing.pricePerTon || 0) / 1000;
+  };
 
   feedHistory
     .filter((r) => r.date >= startDate && r.date <= endDate)
@@ -54,7 +64,7 @@ function computeInsumosUsage(
             const ing = ingredients.find((i) => i.id === item.ingredientId);
             if (!ing) return;
             const amount = dropMN * ((item.inclusionMNPercentage || 0) / 100);
-            const cost = amount * ((ing.pricePerTon || 0) / 1000);
+            const cost = amount * priceOn(ing, record.date);
             if (!usage[ing.id]) usage[ing.id] = { quantity: 0, cost: 0 };
             usage[ing.id].quantity += amount;
             usage[ing.id].cost += cost;
@@ -68,7 +78,7 @@ function computeInsumosUsage(
           const ing = ingredients.find((i) => i.id === item.ingredientId);
           if (!ing) return;
           const amount = record.actualTotalMN * ((item.inclusionMNPercentage || 0) / 100);
-          const cost = amount * ((ing.pricePerTon || 0) / 1000);
+          const cost = amount * priceOn(ing, record.date);
           if (!usage[ing.id]) usage[ing.id] = { quantity: 0, cost: 0 };
           usage[ing.id].quantity += amount;
           usage[ing.id].cost += cost;
@@ -79,19 +89,21 @@ function computeInsumosUsage(
   return Object.entries(usage)
     .map(([id, data]) => {
       const ing = ingredients.find((i) => i.id === id);
+      // Preço médio efetivo do período = custo total / kg total (pondera os dias)
+      const effPricePerTon = data.quantity > 0 ? (data.cost / data.quantity) * 1000 : (ing?.pricePerTon || 0);
       return {
         id,
         name: ing?.name || '?',
         totalQuantity: data.quantity,
         totalCost: data.cost,
-        pricePerTon: ing?.pricePerTon || 0,
+        pricePerTon: effPricePerTon,
       };
     })
     .sort((a, b) => b.totalQuantity - a.totalQuantity);
 }
 
 const Reports: React.FC = () => {
-  const { lots, pens, diets, feedHistory, ingredients, categories, movements, deleteFeedRecord, deleteMovement, config, closings } = useAppStore();
+  const { lots, pens, diets, feedHistory, ingredients, categories, movements, deleteFeedRecord, deleteMovement, config, closings, stockLedgers } = useAppStore();
   const [activeTab, setActiveTab] = useSessionState<'zootecnico' | 'fechamento' | 'insumos' | 'registros'>('reports.activeTab', 'zootecnico');
   const [selectedLotId, setSelectedLotId] = useSessionState<string | null>('reports.selectedLotId', null);
   const [selectedPenId, setSelectedPenId] = useSessionState<string | null>('reports.selectedPenId', null);
@@ -326,8 +338,8 @@ const Reports: React.FC = () => {
 
   // Calcula dados de insumos pro filtro atual (compartilhado com a aba Insumos)
   const insumosUsageData = React.useMemo(
-    () => computeInsumosUsage(feedHistory, diets, ingredients, startDate, endDate, insumosLotFilter || undefined),
-    [feedHistory, diets, ingredients, startDate, endDate, insumosLotFilter]
+    () => computeInsumosUsage(feedHistory, diets, ingredients, startDate, endDate, insumosLotFilter || undefined, stockLedgers),
+    [feedHistory, diets, ingredients, startDate, endDate, insumosLotFilter, stockLedgers]
   );
 
   // Constrói as linhas de Lançamentos (Histórico de Tratos) pra exportação
